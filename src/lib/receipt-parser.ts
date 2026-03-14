@@ -320,11 +320,16 @@ function extractProducts(html: string, text: string): RawItem[] {
 
     const allRows = doc.querySelectorAll("tr")
     for (const row of allRows) {
-      // Skip layout wrapper rows that just contain nested tables
-      if (row.querySelector(":scope > td > table, :scope > td > div > table")) continue
-
       const cells = row.querySelectorAll(":scope > td, :scope > th")
       if (cells.length < 2) continue
+
+      // Skip layout wrappers: rows where every cell's text is >500 chars (entire email body)
+      let isLayoutWrapper = true
+      for (const cell of cells) {
+        const len = cell.textContent?.trim().length || 0
+        if (len > 0 && len < 500) { isLayoutWrapper = false; break }
+      }
+      if (isLayoutWrapper) continue
 
       let bestName = ""
       let bestNameLen = 0
@@ -336,18 +341,15 @@ function extractProducts(html: string, text: string): RawItem[] {
         const cellText = cell.textContent?.trim() || ""
         if (!cellText) continue
 
-        // Extract price from this cell
         const cellPrice = extractPrice(cellText)
         if (cellPrice !== null && price === null) {
           price = cellPrice
         }
 
-        // Check if this looks like a header cell
         if (!/^(qty|quantity|item|description|product|price|amount|unit price|sku|upc|code|extended|total|#)$/i.test(cellText)) {
           isHeaderRow = false
         }
 
-        // Extract potential product name — prefer the LONGEST non-junk cell
         const cleaned = cleanNameText(cellText)
         if (cleaned.length >= 5 && cleaned.length <= 120 && !isJunkName(cleaned)) {
           if (cleaned.length > bestNameLen) {
@@ -358,10 +360,7 @@ function extractProducts(html: string, text: string): RawItem[] {
         }
       }
 
-      // Skip header rows
       if (isHeaderRow) continue
-
-      // Require BOTH name and price
       if (bestName && price !== null) {
         items.push({ name: bestName, price, url })
       }
@@ -373,44 +372,82 @@ function extractProducts(html: string, text: string): RawItem[] {
     return deduplicateItems(items).slice(0, 30)
   }
 
-  // === Strategy 2: Line-based text extraction ===
-  // Convert HTML to lines preserving block-element boundaries, then find lines with name+price
+  // === Strategy 2: Nearby-line matching ===
+  // Convert HTML to lines, find prices, then look at nearby lines for product names.
+  // This handles cases where name and price end up on adjacent lines after HTML conversion.
   const lines = htmlToLines(html).split("\n").map((l) => l.trim()).filter(Boolean)
   const lineItems: RawItem[] = []
+  const usedNameLines = new Set<number>()
 
-  for (const line of lines) {
-    if (line.length > 200 || line.length < 5) continue
-    if (!/\$\d/.test(line)) continue
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (line.length > 300) continue
 
     const price = extractPrice(line)
     if (price === null) continue
 
-    const namePart = cleanNameText(line)
-    if (namePart.length >= 4 && namePart.length <= 120 && !isJunkName(namePart)) {
-      lineItems.push({ name: namePart, price, url: null })
+    // First: check if this line itself has a product name alongside the price
+    const nameOnSameLine = cleanNameText(line)
+    if (nameOnSameLine.length >= 4 && nameOnSameLine.length <= 120 && !isJunkName(nameOnSameLine)) {
+      lineItems.push({ name: nameOnSameLine, price, url: null })
+      continue
+    }
+
+    // Otherwise: look at the 1-3 lines BEFORE this price for a product name
+    for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+      if (usedNameLines.has(j)) continue
+      const prevLine = lines[j].trim()
+      if (prevLine.length < 4 || prevLine.length > 150) continue
+      // Stop if we hit another price line (belongs to a different product)
+      if (/\$\d/.test(prevLine)) break
+      const cleaned = cleanNameText(prevLine)
+      if (cleaned.length >= 4 && cleaned.length <= 120 && !isJunkName(cleaned)) {
+        lineItems.push({ name: cleaned, price, url: null })
+        usedNameLines.add(j)
+        break
+      }
     }
   }
 
   if (lineItems.length > 0) {
-    console.log(`[receipt-parser] Strategy 2 (line-based): found ${lineItems.length} items`)
+    console.log(`[receipt-parser] Strategy 2 (nearby-line): found ${lineItems.length} items`)
     return deduplicateItems(lineItems).slice(0, 30)
   }
 
-  // === Strategy 3: Plain text fallback ===
-  const textLines = text.split("\n").map((l) => l.trim()).filter(Boolean)
+  // === Strategy 3: Plain text nearby-line fallback ===
+  const textLines = text.split(/\n/).map((l) => l.trim()).filter(Boolean)
   const textItems: RawItem[] = []
-  for (const line of textLines) {
-    if (!/\$\d/.test(line) || line.length > 150 || line.length < 8) continue
+  const usedTextLines = new Set<number>()
+
+  for (let i = 0; i < textLines.length; i++) {
+    const line = textLines[i]
+    if (line.length > 200) continue
+
     const price = extractPrice(line)
     if (price === null) continue
-    const namePart = cleanNameText(line)
-    if (namePart.length >= 5 && !isJunkName(namePart)) {
-      textItems.push({ name: namePart, price, url: null })
+
+    const nameOnSameLine = cleanNameText(line)
+    if (nameOnSameLine.length >= 5 && nameOnSameLine.length <= 120 && !isJunkName(nameOnSameLine)) {
+      textItems.push({ name: nameOnSameLine, price, url: null })
+      continue
+    }
+
+    for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+      if (usedTextLines.has(j)) continue
+      const prevLine = textLines[j].trim()
+      if (prevLine.length < 4 || prevLine.length > 150) continue
+      if (/\$\d/.test(prevLine)) break
+      const cleaned = cleanNameText(prevLine)
+      if (cleaned.length >= 4 && cleaned.length <= 120 && !isJunkName(cleaned)) {
+        textItems.push({ name: cleaned, price, url: null })
+        usedTextLines.add(j)
+        break
+      }
     }
   }
 
   if (textItems.length > 0) {
-    console.log(`[receipt-parser] Strategy 3 (text fallback): found ${textItems.length} items`)
+    console.log(`[receipt-parser] Strategy 3 (text nearby-line): found ${textItems.length} items`)
   } else {
     console.log(`[receipt-parser] No products found in email`)
   }
@@ -466,6 +503,12 @@ export function parseReceiptEmail(
   }
 
   const text = htmlToText(html)
+
+  // Body-level subscription check (catches Google Play "Order Receipt" that are actually renewals)
+  if (/\b(subscription|has renewed|auto.?renew)\b/i.test(text) && /\b(renew|recurring|monthly|annually)\b/i.test(text)) {
+    console.log(`[receipt-parser] Skipping — body indicates subscription renewal`)
+    return { products: [], order_total: null }
+  }
   const retailer = detectRetailer(from, html)
   const orderId = extractOrderId(text)
   const purchaseDate = extractDate(dateHeader)
