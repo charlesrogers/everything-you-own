@@ -12,7 +12,7 @@ import {
   getMessageBody, getImportedEmailIds, markEmailsImported,
 } from "@/lib/gmail"
 import type { GmailMessageMeta } from "@/lib/gmail"
-import { parseReceiptEmail } from "@/lib/receipt-parser"
+import { parseReceiptEmail, classifyEmail } from "@/lib/receipt-parser"
 import { addProduct, getCategories, getSubcategories, checkDuplicates } from "@/lib/store"
 import type { Category, Subcategory, ProductOwnership } from "@/lib/types"
 import { OWNERSHIP_OPTIONS } from "@/lib/constants"
@@ -36,6 +36,7 @@ interface DraftProduct {
   subcategory_id: string
   ownership: ProductOwnership
   is_consumable: boolean
+  source_url: string
   included: boolean
   duplicateWarning: string | null
 }
@@ -180,9 +181,8 @@ function ImportContent() {
           return { categoryId: cat.id, subcategoryId: sub?.id || "" }
         }
       }
-      const fallback = categories[0]
-      const fallbackSub = fallback ? subcategories.find((s) => s.category_id === fallback.id) : null
-      return { categoryId: fallback?.id || "", subcategoryId: fallbackSub?.id || "" }
+      // No fallback — leave blank for user to pick
+      return { categoryId: "", subcategoryId: "" }
     },
     [categories, subcategories]
   )
@@ -194,16 +194,24 @@ function ImportContent() {
     setPhase("review")
     setProcessing(true)
     setProcessProgress({ current: 0, total: selected.length })
-    const allDrafts: DraftProduct[] = []
+
+    // Collect drafts grouped by order key for cross-email dedup
+    const orderGroups = new Map<string, { emailId: string; drafts: DraftProduct[] }>()
+    const noOrderDrafts: DraftProduct[] = []
 
     for (let i = 0; i < selected.length; i++) {
       const email = selected[i]
       setProcessProgress({ current: i + 1, total: selected.length })
 
+      // Skip non-order emails (double-check beyond Gmail query filter)
+      const emailType = classifyEmail(email.subject)
+      if (emailType !== "order" && emailType !== "unknown") continue
+
       try {
         const html = await getMessageBody(token, email.id)
         const result = parseReceiptEmail(html, email.subject, email.from, email.date)
 
+        const emailDrafts: DraftProduct[] = []
         for (const product of result.products) {
           const { categoryId, subcategoryId } = mapCategoryGuess(product.category_guess)
 
@@ -215,7 +223,7 @@ function ImportContent() {
                 ? `Similar: ${dupes.fuzzy[0].name}`
                 : null
 
-          allDrafts.push({
+          emailDrafts.push({
             emailId: email.id,
             name: product.name,
             brand: product.brand || "",
@@ -227,9 +235,33 @@ function ImportContent() {
             subcategory_id: subcategoryId,
             ownership: "mine",
             is_consumable: product.is_consumable,
+            source_url: product.source_url || "",
             included: !duplicateWarning?.startsWith("Exact"),
             duplicateWarning,
           })
+        }
+
+        if (emailDrafts.length === 0) continue
+
+        // Group by retailer + order_id for cross-email dedup
+        const orderId = emailDrafts[0]?.order_id
+        const retailer = emailDrafts[0]?.retailer
+        if (orderId && retailer) {
+          const key = `${retailer}::${orderId}`.toLowerCase()
+          const existing = orderGroups.get(key)
+          if (!existing) {
+            orderGroups.set(key, { emailId: email.id, drafts: emailDrafts })
+          } else {
+            // Keep the version with more products or more prices
+            const existingPriceCount = existing.drafts.filter((d) => d.price).length
+            const newPriceCount = emailDrafts.filter((d) => d.price).length
+            if (emailDrafts.length > existing.drafts.length || newPriceCount > existingPriceCount) {
+              orderGroups.set(key, { emailId: email.id, drafts: emailDrafts })
+            }
+            // Otherwise keep existing (first email wins)
+          }
+        } else {
+          noOrderDrafts.push(...emailDrafts)
         }
       } catch (e) {
         if (e instanceof Error && e.message === "SESSION_EXPIRED") {
@@ -240,6 +272,13 @@ function ImportContent() {
         console.error(`Failed to process email ${email.id}:`, e)
       }
     }
+
+    // Flatten deduped groups
+    const allDrafts: DraftProduct[] = []
+    for (const group of orderGroups.values()) {
+      allDrafts.push(...group.drafts)
+    }
+    allDrafts.push(...noOrderDrafts)
 
     setDrafts(allDrafts)
     setProcessing(false)
@@ -265,6 +304,7 @@ function ImportContent() {
         purchase_date: draft.purchase_date || undefined,
         ownership: draft.ownership,
         is_consumable: draft.is_consumable || undefined,
+        source_url: draft.source_url || undefined,
         status: "purchased",
         currency: "USD",
         tags: [],
@@ -596,6 +636,7 @@ function ImportContent() {
                           }}
                           className="w-full rounded-lg border bg-background px-3 py-1.5 text-[13px]"
                         >
+                          <option value="">Select category</option>
                           {categories.map((c) => (
                             <option key={c.id} value={c.id}>{c.name}</option>
                           ))}
