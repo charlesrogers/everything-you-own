@@ -34,21 +34,36 @@ export function loadGisScript(): Promise<void> {
 
 export function requestGmailAccess(clientId: string): Promise<string> {
   return new Promise((resolve, reject) => {
+    let resolved = false
     const client = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: "https://www.googleapis.com/auth/gmail.readonly",
       callback: (response) => {
+        resolved = true
         if (response.error) {
+          console.error("GIS callback error:", response)
           reject(new Error(response.error_description || response.error))
         } else {
+          console.log("GIS token received, length:", response.access_token?.length)
           resolve(response.access_token)
         }
       },
       error_callback: (error) => {
-        reject(new Error(error.message || "OAuth failed"))
+        console.error("GIS error_callback:", error)
+        // popup_closed fires on timing issues even after successful consent.
+        // Give the success callback a moment to fire before rejecting.
+        if (error.type === "popup_closed") {
+          setTimeout(() => {
+            if (!resolved) {
+              reject(new Error("Popup was closed before completing. Make sure to click 'Allow' on the Google consent screen."))
+            }
+          }, 1000)
+        } else {
+          reject(new Error(error.message || "OAuth failed"))
+        }
       },
     })
-    client.requestAccessToken()
+    client.requestAccessToken({ prompt: "" })
   })
 }
 
