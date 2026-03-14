@@ -3,12 +3,13 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
-import { LayoutDashboard, Package, Grid3X3, Settings, Sun, Moon } from "lucide-react"
+import { LayoutDashboard, Package, Download, Grid3X3, Settings, Sun, Moon } from "lucide-react"
 import { useEffect, useState } from "react"
 
 const links = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Package },
+  { href: "/import", label: "Import", icon: Download },
   { href: "/categories", label: "Categories", icon: Grid3X3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
