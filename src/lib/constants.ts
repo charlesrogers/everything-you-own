@@ -26,3 +26,9 @@ export const CONDITION_OPTIONS: { value: string; label: string }[] = [
   { value: "fair", label: "Fair" },
   { value: "poor", label: "Poor" },
 ]
+
+export const OWNERSHIP_OPTIONS: { value: string; label: string }[] = [
+  { value: "mine", label: "Mine" },
+  { value: "household", label: "Household" },
+  { value: "partner", label: "Partner" },
+]

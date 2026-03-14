@@ -23,8 +23,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ImageUpload } from "./image-upload"
-import { Product, ProductStatus, ProductCondition, Category, Subcategory } from "@/lib/types"
-import { STATUS_OPTIONS, CONDITION_OPTIONS } from "@/lib/constants"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Product, ProductStatus, ProductCondition, ProductOwnership, Category, Subcategory } from "@/lib/types"
+import { STATUS_OPTIONS, CONDITION_OPTIONS, OWNERSHIP_OPTIONS } from "@/lib/constants"
 import {
   getCategories,
   getSubcategories,
@@ -81,6 +82,8 @@ export function ProductForm({ product, mode }: ProductFormProps) {
   const [returnByDate, setReturnByDate] = useState(product?.return_by_date || "")
   const [warrantyExpires, setWarrantyExpires] = useState(product?.warranty_expires || "")
   const [orderId, setOrderId] = useState(product?.order_id || "")
+  const [ownership, setOwnership] = useState<ProductOwnership>(product?.ownership || "mine")
+  const [isConsumable, setIsConsumable] = useState(product?.is_consumable || false)
   const [notes, setNotes] = useState(product?.notes || "")
   const [tagsInput, setTagsInput] = useState((product?.tags || []).join(", "))
 
@@ -152,6 +155,8 @@ export function ProductForm({ product, mode }: ProductFormProps) {
       return_by_date: returnByDate || undefined,
       warranty_expires: warrantyExpires || undefined,
       order_id: orderId || undefined,
+      ownership,
+      is_consumable: isConsumable || undefined,
       notes: notes || undefined,
       tags,
     }
@@ -473,15 +478,41 @@ export function ProductForm({ product, mode }: ProductFormProps) {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="orderId" className="text-[13px]">Order ID</Label>
-                <Input
-                  id="orderId"
-                  value={orderId}
-                  onChange={(e) => setOrderId(e.target.value)}
-                  placeholder="Retailer order number"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="orderId" className="text-[13px]">Order ID</Label>
+                  <Input
+                    id="orderId"
+                    value={orderId}
+                    onChange={(e) => setOrderId(e.target.value)}
+                    placeholder="Retailer order number"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[13px]">Ownership</Label>
+                  <Select value={ownership} onValueChange={(v) => v && setOwnership(v as ProductOwnership)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OWNERSHIP_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={isConsumable}
+                  onCheckedChange={(v) => setIsConsumable(v === true)}
+                />
+                <span className="text-[13px] font-medium">Consumable</span>
+                <span className="text-[11px] text-muted-foreground">(groceries, toiletries, etc.)</span>
+              </label>
 
               <div className="space-y-1.5">
                 <Label htmlFor="notes" className="text-[13px]">Notes</Label>

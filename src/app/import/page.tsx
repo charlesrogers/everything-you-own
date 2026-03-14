@@ -14,7 +14,8 @@ import {
 import type { GmailMessageMeta } from "@/lib/gmail"
 import { parseReceiptEmail } from "@/lib/receipt-parser"
 import { addProduct, getCategories, getSubcategories, checkDuplicates } from "@/lib/store"
-import type { Category, Subcategory } from "@/lib/types"
+import type { Category, Subcategory, ProductOwnership } from "@/lib/types"
+import { OWNERSHIP_OPTIONS } from "@/lib/constants"
 
 type Phase = "connect" | "select" | "review"
 
@@ -33,6 +34,8 @@ interface DraftProduct {
   purchase_date: string
   category_id: string
   subcategory_id: string
+  ownership: ProductOwnership
+  is_consumable: boolean
   included: boolean
   duplicateWarning: string | null
 }
@@ -222,6 +225,8 @@ function ImportContent() {
             purchase_date: product.purchase_date || "",
             category_id: categoryId,
             subcategory_id: subcategoryId,
+            ownership: "mine",
+            is_consumable: product.is_consumable,
             included: !duplicateWarning?.startsWith("Exact"),
             duplicateWarning,
           })
@@ -258,6 +263,8 @@ function ImportContent() {
         retailer: draft.retailer || undefined,
         order_id: draft.order_id || undefined,
         purchase_date: draft.purchase_date || undefined,
+        ownership: draft.ownership,
+        is_consumable: draft.is_consumable || undefined,
         status: "purchased",
         currency: "USD",
         tags: [],
@@ -616,7 +623,28 @@ function ImportContent() {
                           className="w-full rounded-lg border bg-background px-3 py-1.5 text-[13px]"
                         />
                       </div>
+                      <div>
+                        <label className="text-[11px] text-muted-foreground">Ownership</label>
+                        <select
+                          value={draft.ownership}
+                          onChange={(e) => updateDraft(i, "ownership", e.target.value)}
+                          className="w-full rounded-lg border bg-background px-3 py-1.5 text-[13px]"
+                        >
+                          {OWNERSHIP_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={draft.is_consumable}
+                        onChange={(e) => updateDraft(i, "is_consumable", e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-[12px] text-muted-foreground">Consumable (groceries, toiletries, etc.)</span>
+                    </label>
                   </div>
                 ))}
               </div>

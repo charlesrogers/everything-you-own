@@ -9,6 +9,7 @@ export interface ParsedProduct {
   order_id: string | null
   purchase_date: string | null
   category_guess: string | null
+  is_consumable: boolean
 }
 
 export interface ParseResult {
@@ -199,16 +200,20 @@ export function parseReceiptEmail(
 
   // If we found product names, pair them with prices
   if (productNames.length > 0) {
-    const products: ParsedProduct[] = productNames.map((name, i) => ({
-      name,
-      brand: null,
-      price: allPrices[i] ?? allPrices[0] ?? null,
-      quantity: 1,
-      retailer,
-      order_id: orderId,
-      purchase_date: purchaseDate,
-      category_guess: guessCategory(name),
-    }))
+    const products: ParsedProduct[] = productNames.map((name, i) => {
+      const category_guess = guessCategory(name)
+      return {
+        name,
+        brand: null,
+        price: allPrices[i] ?? allPrices[0] ?? null,
+        quantity: 1,
+        retailer,
+        order_id: orderId,
+        purchase_date: purchaseDate,
+        category_guess,
+        is_consumable: category_guess === "Groceries & Consumables",
+      }
+    })
 
     // Order total is typically the largest price
     const orderTotal = allPrices.length > 0 ? Math.max(...allPrices) : null
@@ -223,6 +228,7 @@ export function parseReceiptEmail(
       .replace(/\s*[-–|]\s*order\s*#.*/i, "")
       .trim() || "Unknown Product"
 
+    const fallbackCategory = guessCategory(name)
     return {
       products: [{
         name,
@@ -232,7 +238,8 @@ export function parseReceiptEmail(
         retailer,
         order_id: orderId,
         purchase_date: purchaseDate,
-        category_guess: guessCategory(name),
+        category_guess: fallbackCategory,
+        is_consumable: fallbackCategory === "Groceries & Consumables",
       }],
       order_total: allPrices.length > 0 ? Math.max(...allPrices) : null,
     }

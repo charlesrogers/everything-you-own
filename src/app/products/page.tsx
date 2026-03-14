@@ -16,7 +16,9 @@ import {
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ProductCard } from "@/components/product-card"
 import { ProductRow } from "@/components/product-row"
-import { Product, Category, Subcategory, ProductStatus, SortField, ViewMode } from "@/lib/types"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Product, Category, Subcategory, ProductStatus, ProductOwnership, SortField, ViewMode } from "@/lib/types"
+import { OWNERSHIP_OPTIONS } from "@/lib/constants"
 import { filterProducts, getCategories, getSubcategories } from "@/lib/store"
 
 export default function ProductsPage() {
@@ -27,6 +29,8 @@ export default function ProductsPage() {
   const [categoryId, setCategoryId] = useState("")
   const [sortField, setSortField] = useState<SortField>("date_added")
   const [query, setQuery] = useState("")
+  const [ownership, setOwnership] = useState<ProductOwnership | "all">("all")
+  const [hideConsumables, setHideConsumables] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>("grid")
   const [mounted, setMounted] = useState(false)
 
@@ -43,9 +47,11 @@ export default function ProductsPage() {
       query: query || undefined,
       sortField,
       sortDirection: sortField === "name" ? "asc" : "desc",
+      ownership,
+      hideConsumables,
     })
     setProducts(filtered)
-  }, [status, categoryId, query, sortField])
+  }, [status, categoryId, query, sortField, ownership, hideConsumables])
 
   useEffect(() => {
     if (mounted) refreshProducts()
@@ -119,6 +125,30 @@ export default function ProductsPage() {
             <SelectItem value="purchase_date">Purchase Date</SelectItem>
           </SelectContent>
         </Select>
+
+        <Select value={ownership} onValueChange={(v) => v && setOwnership(v as ProductOwnership | "all")}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue>
+              {ownership === "all" ? "All Owners" : OWNERSHIP_OPTIONS.find((o) => o.value === ownership)?.label}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Owners</SelectItem>
+            {OWNERSHIP_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground cursor-pointer whitespace-nowrap">
+          <Checkbox
+            checked={hideConsumables}
+            onCheckedChange={(v) => setHideConsumables(v === true)}
+          />
+          Hide consumables
+        </label>
 
         <div className="flex rounded-lg border p-0.5">
           <button

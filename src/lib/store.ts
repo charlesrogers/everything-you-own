@@ -1,4 +1,4 @@
-import { Product, Category, Subcategory, SortField, SortDirection, ProductStatus } from "./types"
+import { Product, Category, Subcategory, SortField, SortDirection, ProductStatus, ProductOwnership } from "./types"
 import { DEFAULT_TAXONOMY } from "./constants"
 
 const KEYS = {
@@ -169,6 +169,8 @@ export function filterProducts(options: {
   query?: string
   sortField?: SortField
   sortDirection?: SortDirection
+  ownership?: ProductOwnership | "all"
+  hideConsumables?: boolean
 }): Product[] {
   let products = options.query ? searchProducts(options.query) : getProducts()
 
@@ -180,6 +182,12 @@ export function filterProducts(options: {
   }
   if (options.subcategoryId) {
     products = products.filter((p) => p.subcategory_id === options.subcategoryId)
+  }
+  if (options.ownership && options.ownership !== "all") {
+    products = products.filter((p) => (p.ownership || "mine") === options.ownership)
+  }
+  if (options.hideConsumables) {
+    products = products.filter((p) => !p.is_consumable)
   }
 
   const field = options.sortField || "date_added"

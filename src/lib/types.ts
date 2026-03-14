@@ -1,4 +1,5 @@
 export type ProductStatus = "purchased" | "wishlist" | "returned" | "gifted" | "sold"
+export type ProductOwnership = "mine" | "household" | "partner"
 export type ProductCondition = "new" | "like_new" | "good" | "fair" | "poor"
 export type WeightUnit = "oz" | "lb" | "g" | "kg"
 export type VolumeUnit = "ml" | "l" | "fl_oz" | "gal"
@@ -44,6 +45,8 @@ export interface Product {
   return_by_date?: string
   warranty_expires?: string
   order_id?: string
+  ownership?: ProductOwnership
+  is_consumable?: boolean
   tags: string[]
   created_at: string
   updated_at: string
