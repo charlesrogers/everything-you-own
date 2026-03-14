@@ -1,13 +1,14 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import {
   Mail, CheckCircle, AlertTriangle, Loader2, ChevronLeft,
   Package, Check, X,
 } from "lucide-react"
 import {
-  loadGisScript, requestGmailAccess, searchReceipts, batchGetMetadata,
+  getGmailAuthUrl, searchReceipts, batchGetMetadata,
   getMessageBody, getImportedEmailIds, markEmailsImported,
 } from "@/lib/gmail"
 import type { GmailMessageMeta } from "@/lib/gmail"
@@ -36,13 +37,19 @@ interface DraftProduct {
   duplicateWarning: string | null
 }
 
-const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""
-
 export default function ImportPage() {
+  return (
+    <Suspense>
+      <ImportContent />
+    </Suspense>
+  )
+}
+
+function ImportContent() {
+  const searchParams = useSearchParams()
   const [phase, setPhase] = useState<Phase>("connect")
   const [token, setToken] = useState("")
   const [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
 
   // Phase 2: Select
   const [emails, setEmails] = useState<EmailEntry[]>([])
@@ -65,22 +72,43 @@ export default function ImportPage() {
     setSubcategories(getSubcategories())
   }, [])
 
+  // Check for OAuth redirect callback
+  useEffect(() => {
+    const authParam = searchParams.get("auth")
+    const errorParam = searchParams.get("error")
+
+    if (errorParam) {
+      setError(decodeURIComponent(errorParam))
+      // Clean up URL
+      window.history.replaceState({}, "", "/import")
+      return
+    }
+
+    if (authParam === "success") {
+      const savedToken = sessionStorage.getItem("gmail_token")
+      if (savedToken) {
+        setToken(savedToken)
+        setPhase("select")
+        // Clean up URL
+        window.history.replaceState({}, "", "/import")
+      } else {
+        setError("Token not found. Please try connecting again.")
+      }
+    }
+  }, [searchParams])
+
+  // Auto-load emails when entering select phase with a token
+  useEffect(() => {
+    if (phase === "select" && token && emails.length === 0) {
+      loadEmails(token, timeframe)
+    }
+  }, [phase, token]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // --- Phase 1: Connect ---
 
-  const handleConnect = async () => {
-    setError("")
-    setLoading(true)
-    try {
-      await loadGisScript()
-      const accessToken = await requestGmailAccess(CLIENT_ID)
-      setToken(accessToken)
-      setPhase("select")
-      await loadEmails(accessToken, timeframe)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to connect to Gmail")
-    } finally {
-      setLoading(false)
-    }
+  const handleConnect = () => {
+    const authUrl = getGmailAuthUrl()
+    window.location.href = authUrl
   }
 
   // --- Phase 2: Select ---
@@ -176,7 +204,6 @@ export default function ImportPage() {
         for (const product of result.products) {
           const { categoryId, subcategoryId } = mapCategoryGuess(product.category_guess)
 
-          // Check for duplicates
           const dupes = checkDuplicates({ name: product.name, brand: product.brand || undefined })
           const duplicateWarning =
             dupes.exact.length > 0
@@ -244,7 +271,7 @@ export default function ImportPage() {
 
   const includedCount = drafts.filter((d) => d.included).length
 
-  // --- Render ---
+  // --- Render helpers ---
 
   const formatFrom = (from: string) => {
     const match = from.match(/^"?([^"<]+)"?\s*</)
@@ -299,11 +326,10 @@ export default function ImportPage() {
           </p>
           <button
             onClick={handleConnect}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px"
           >
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
-            {loading ? "Connecting..." : "Connect Gmail"}
+            <Mail className="size-4" />
+            Connect Gmail
           </button>
         </div>
       )}
@@ -349,7 +375,7 @@ export default function ImportPage() {
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
               <span className="ml-2 text-[13px] text-muted-foreground">Searching inbox...</span>
             </div>
-          ) : emails.length === 0 ? (
+          ) : emails.length === 0 && !loadingMore ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Mail className="size-10 text-muted-foreground/30 mb-3" />
               <p className="text-[13px] text-muted-foreground">No receipt emails found in this timeframe.</p>

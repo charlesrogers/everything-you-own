@@ -1,70 +1,26 @@
-// Gmail OAuth + API helpers (client-side only)
+// Gmail OAuth (redirect flow) + API helpers
 
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me"
 const IMPORTED_KEY = "eyo_imported_emails"
 
-// --- Script loading ---
+// --- OAuth (redirect flow) ---
 
-let scriptLoaded = false
+export function getGmailAuthUrl(): string {
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""
+  const redirectUri = typeof window !== "undefined"
+    ? `${window.location.origin}/api/auth/google/callback`
+    : ""
 
-export function loadGisScript(): Promise<void> {
-  if (scriptLoaded) return Promise.resolve()
-  if (typeof document === "undefined") return Promise.reject(new Error("No document"))
-
-  const existing = document.querySelector('script[src*="accounts.google.com/gsi/client"]')
-  if (existing) {
-    scriptLoaded = true
-    return Promise.resolve()
-  }
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script")
-    script.src = "https://accounts.google.com/gsi/client"
-    script.async = true
-    script.onload = () => {
-      scriptLoaded = true
-      resolve()
-    }
-    script.onerror = () => reject(new Error("Failed to load Google Identity Services"))
-    document.head.appendChild(script)
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "https://www.googleapis.com/auth/gmail.readonly",
+    access_type: "online",
+    prompt: "consent",
   })
-}
 
-// --- OAuth ---
-
-export function requestGmailAccess(clientId: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let resolved = false
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: "https://www.googleapis.com/auth/gmail.readonly",
-      callback: (response) => {
-        resolved = true
-        if (response.error) {
-          console.error("GIS callback error:", response)
-          reject(new Error(response.error_description || response.error))
-        } else {
-          console.log("GIS token received, length:", response.access_token?.length)
-          resolve(response.access_token)
-        }
-      },
-      error_callback: (error) => {
-        console.error("GIS error_callback:", error)
-        // popup_closed fires on timing issues even after successful consent.
-        // Give the success callback a moment to fire before rejecting.
-        if (error.type === "popup_closed") {
-          setTimeout(() => {
-            if (!resolved) {
-              reject(new Error("Popup was closed before completing. Make sure to click 'Allow' on the Google consent screen."))
-            }
-          }, 1000)
-        } else {
-          reject(new Error(error.message || "OAuth failed"))
-        }
-      },
-    })
-    client.requestAccessToken({ prompt: "" })
-  })
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params}`
 }
 
 // --- Gmail API helpers ---
@@ -145,7 +101,6 @@ export async function batchGetMetadata(token: string, ids: string[]): Promise<Gm
       results.push(meta)
     } catch (e) {
       if (e instanceof Error && e.message === "SESSION_EXPIRED") throw e
-      // Skip individual failures
     }
   }
   return results
@@ -204,14 +159,12 @@ export async function getMessageBody(token: string, messageId: string): Promise<
   const data = await res.json()
   const payload = data.payload as MimePart
 
-  // Try HTML first, fall back to plain text
   const html = findHtmlPart(payload)
   if (html) return html
 
   const text = findTextPart(payload)
   if (text) return text
 
-  // Last resort: direct body
   if (payload.body?.data) return decodeBase64Url(payload.body.data)
 
   return ""
