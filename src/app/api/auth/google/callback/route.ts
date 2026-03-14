@@ -43,9 +43,10 @@ export async function GET(request: NextRequest) {
   const tokenData = await tokenRes.json()
 
   if (tokenData.error) {
-    console.error("Token exchange error:", tokenData)
+    console.error("Token exchange error:", JSON.stringify(tokenData))
+    const errMsg = [tokenData.error, tokenData.error_description].filter(Boolean).join(": ")
     return NextResponse.redirect(
-      new URL(`/import?error=${encodeURIComponent(tokenData.error_description || tokenData.error)}`, request.url)
+      new URL(`/import?error=${encodeURIComponent(errMsg)}`, request.url)
     )
   }
 
