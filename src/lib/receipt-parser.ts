@@ -44,46 +44,91 @@ export function classifyEmail(subject: string): EmailType {
 // --- Junk name filtering ---
 
 const JUNK_NAME_PATTERNS: RegExp[] = [
+  // Financial rows
   /^(subtotal|sub-total|sub total):?$/i,
   /^(total|order total|grand total|total charged|total paid|amount charged|estimated total):?$/i,
-  /^(shipping|shipping & handling|standard shipping|free shipping|flat rate):?$/i,
+  /^(shipping|shipping & handling|standard shipping|free shipping|flat rate|delivery):?$/i,
   /^(estimated )?(sales )?tax(es)?:?$/i,
   /^(state|local|county) (sales )?tax:?/i,
   /^(service fee|delivery fee|fees|tip|gratuity|discount|coupon|promo):?$/i,
-  /^(payment method|paid with|payment info):?/i,
+  /^(payment method|paid with|payment info|payment):?/i,
   /^visa|^mastercard|^amex|^american express|^discover/i,
   /\bending in \d{4}\b/i,
   /^(refund|credit|balance|remaining balance|gift card|refunded amount):?/i,
-  /^(continue shopping|items from your list|you may also like|recommended for you)/i,
-  /^(how was|rate your|review your|track your|track package)/i,
-  /\b(has shipped|is shipping|out for delivery|has arrived|has been delivered|will arrive|ready for pickup|picked up)\b/i,
-  /^(per month|\/month)$/i,
-  /^(USD|AUD|EUR|GBP)\s*$/i,
-  /^free$/i,
   /^(merchandise|merchandise discount):?/i,
   /^(item discount|transaction discount):?/i,
   /^(savings|promotional discounts?|equipment deposit):?/i,
   /^(renewal discount|credit)-?:?$/i,
   /^(applied discount|discount \(code:)/i,
   /^(package total|package subtotal|est tax):?/i,
+  /^(order summary|payment summary):?$/i,
+  /^(per month|\/month)$/i,
+  /^(USD|AUD|EUR|GBP)\s*$/i,
+  /^free$/i,
   /\bsignature delivery\b/i,
   /^(free gift|you deserved it)/i,
-  /^(order summary|payment summary):?$/i,
-  /^-?\$?\d+[\d.,]*\s*$/,  // pure numbers/prices
-  /^\d+x\s*$/i,  // just "1x" or "3x"
+  /^-?\$?\d+[\d.,]*\s*$/,
+  /^\d+x\s*$/i,
   /^(includes connectivity discount|requires activation)/i,
+
+  // Email UI / navigation text
+  /^(continue shopping|items from your list|you may also like|recommended for you)/i,
+  /^(view (your )?(order|cart|receipt|account|details|items))/i,
+  /^(shop now|buy now|buy again|order again|reorder)/i,
+  /^(manage (your )?(order|account|subscription|preferences))/i,
+  /^(update (your )?(preferences|settings|account|address|payment))/i,
+  /^(unsubscribe|email preferences|privacy policy|terms of (service|use))/i,
+  /^(need help|contact us|customer (service|support|care)|get help|help center|support center)/i,
+  /^(download (the )?app|get the app|available on)/i,
+  /^(follow us|connect with us|find us|join us)/i,
+  /^(thank you|thanks) for (your )?(order|purchase|shopping)/i,
+  /^(order placed|order received|we got your order|order confirmed)/i,
+  /^(how was|rate your|review your|track your|track package)/i,
+  /\b(has shipped|is shipping|out for delivery|has arrived|has been delivered|will arrive|ready for pickup|picked up)\b/i,
+  /^(questions\??|have questions|got questions)/i,
+  /^(call us|chat with us|email us|write to us)/i,
+  /\ball rights reserved\b/i,
+  /^©/,
+  /^(if you have|if you need|if you're having|for questions)/i,
+  /^(this email|this message|this is a|you received this|you're receiving this)/i,
+  /^(do not reply|please do not|no-?reply)/i,
+  /^(powered by|sent (by|from|via))/i,
+  /^(qty|quantity|item|description|product|price|amount|unit price)$/i,
+  /^(billing address|shipping address|ship to|bill to|deliver to)/i,
+  /^(estimated delivery|delivery date|arrives|arriving|expected)/i,
+  /^(sold by|fulfilled by|shipped from|ships from)/i,
+  /^(return (policy|by|within)|returns|exchanges)/i,
+  /^(cancel|cancellation|modify order)/i,
+
+  // Social / promo
+  /^(facebook|twitter|instagram|pinterest|youtube|tiktok|linkedin)/i,
+  /^(share|tweet|pin it|like us)/i,
+  /^(earn|points|rewards|loyalty|refer)/i,
+  /^(save \$|% off|deal|sale|limited time|exclusive|special offer)/i,
+  /^(gift cards?|e-?gift)/i,
+
+  // Address/location fragments
+  /^\d{1,5}\s+(N|S|E|W|North|South|East|West)?\s*\w+\s+(St|Ave|Blvd|Rd|Dr|Ln|Way|Ct|Pkwy|Hwy)/i,
+  /^(suite|ste|apt|unit|floor)\s*#?\s*\d/i,
+  /\b\d{5}(-\d{4})?\s*$/,  // zip code at end
 ]
 
 function isJunkName(name: string): boolean {
   const trimmed = name.trim()
   if (trimmed.length < 3) return true
+  if (trimmed.length > 120) return true
   for (const pattern of JUNK_NAME_PATTERNS) {
     if (pattern.test(trimmed)) return true
   }
-  // Names that are just "Subtotal: Discount: Fees: Taxes: Tip: Total: Paid with..."
+  // Multiple colons = summary block ("Subtotal: $x Fees: $y Tax: $z Total: $w")
   if ((trimmed.match(/:/g) || []).length >= 3) return true
-  // Names starting with common financial prefixes
-  if (/^(total|subtotal|shipping|tax|fee|discount|tip|paid|charged|refund)/i.test(trimmed) && trimmed.length < 40) return true
+  // Starts with common financial/logistic prefixes
+  if (/^(total|subtotal|shipping|tax|fee|discount|tip|paid|charged|refund|delivery|handling)/i.test(trimmed) && trimmed.length < 40) return true
+  // Looks like a URL
+  if (/^https?:\/\//i.test(trimmed)) return true
+  // Mostly punctuation or numbers (not a real product name)
+  const alphaCount = (trimmed.match(/[a-zA-Z]/g) || []).length
+  if (alphaCount < trimmed.length * 0.3) return true
   return false
 }
 
@@ -212,113 +257,142 @@ interface RawItem {
   url: string | null
 }
 
-function extractProducts(html: string, text: string): RawItem[] {
-  const items: RawItem[] = []
+function cleanNameText(raw: string): string {
+  return raw
+    .replace(/\$\s?\d{1,6}(?:,\d{3})*(?:\.\d{2})?/g, "")
+    .replace(/\bQty:?\s*\d+/gi, "")
+    .replace(/\bQuantity:?\s*\d+/gi, "")
+    .replace(/\bSKU:?\s*\S+/gi, "")
+    .replace(/\bx\s*\d+\s*$/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
 
+function extractLinkFromElement(el: Element): string | null {
+  const link = el.querySelector("a[href]")
+  if (!link) return null
+  const href = link.getAttribute("href") || ""
+  if (href.startsWith("http") && !href.includes("unsubscribe") && !href.includes("track") && !href.includes("mailto:")) {
+    return href
+  }
+  return null
+}
+
+function parseTableRow(row: Element): RawItem | null {
+  const cells = row.querySelectorAll("td")
+  if (cells.length < 2) return null
+
+  let nameText = ""
+  let price: number | null = null
+  let url: string | null = null
+
+  for (const cell of cells) {
+    const cellText = cell.textContent?.trim() || ""
+    const cellPrice = extractPrice(cellText)
+    if (cellPrice !== null && price === null) {
+      price = cellPrice
+    }
+    const stripped = cleanNameText(cellText)
+    if (stripped.length >= 5 && stripped.length <= 120 && !nameText && !isJunkName(stripped)) {
+      nameText = stripped
+      url = extractLinkFromElement(cell)
+    }
+  }
+
+  if (!nameText || isJunkName(nameText)) return null
+  return { name: nameText, price, url }
+}
+
+function extractProducts(html: string, text: string): RawItem[] {
   if (typeof DOMParser !== "undefined") {
     const parser = new DOMParser()
     const doc = parser.parseFromString(html, "text/html")
 
-    // Strategy 1: Look for table rows with product + price cells
-    const rows = doc.querySelectorAll("tr")
-    for (const row of rows) {
-      const cells = row.querySelectorAll("td")
-      if (cells.length < 2) continue
+    // Remove noise elements
+    doc.querySelectorAll("style, script").forEach((el) => el.remove())
 
-      let nameText = ""
-      let price: number | null = null
-      let url: string | null = null
+    // === Strategy 1: Find product TABLES ===
+    // A product table has multiple rows with name+price pairs.
+    // We scan each <table> independently and keep tables where ≥2 rows have prices.
+    const tables = doc.querySelectorAll("table")
+    const productTableItems: RawItem[] = []
 
-      for (const cell of cells) {
-        const cellText = cell.textContent?.trim() || ""
-        // Look for a cell that has a price
-        const cellPrice = extractPrice(cellText)
-        if (cellPrice !== null && price === null) {
-          price = cellPrice
-        }
-        // Look for a cell with meaningful text (potential product name)
-        const stripped = cellText
-          .replace(/\$\s?\d{1,6}(?:,\d{3})*(?:\.\d{2})?/g, "")
-          .replace(/\bQty:?\s*\d+/gi, "")
-          .replace(/\bQuantity:?\s*\d+/gi, "")
-          .replace(/\bSKU:?\s*\S+/gi, "")
-          .replace(/\s+/g, " ")
-          .trim()
-        if (stripped.length >= 5 && stripped.length <= 150 && !nameText) {
-          nameText = stripped
-          // Check for link in this cell
-          const link = cell.querySelector("a[href]")
-          if (link) {
-            const href = link.getAttribute("href") || ""
-            if (href.startsWith("http") && !href.includes("unsubscribe") && !href.includes("track")) {
-              url = href
-            }
+    for (const table of tables) {
+      // Get direct or near-direct rows (skip deeply nested sub-tables)
+      const rows = table.querySelectorAll(":scope > tr, :scope > thead > tr, :scope > tbody > tr")
+      const rowItems: (RawItem | null)[] = []
+      let priceCount = 0
+
+      for (const row of rows) {
+        // Skip rows that contain nested tables (layout wrappers)
+        if (row.querySelector("table")) continue
+        const item = parseTableRow(row)
+        rowItems.push(item)
+        if (item?.price !== null && item?.price !== undefined) priceCount++
+      }
+
+      // A valid product table has ≥2 rows with prices, OR exactly 1 row with price (single-item order)
+      if (priceCount >= 1) {
+        for (const item of rowItems) {
+          // In a confirmed product table, accept rows with name+price
+          if (item && item.price !== null) {
+            productTableItems.push(item)
           }
         }
       }
-
-      if (nameText && !isJunkName(nameText)) {
-        items.push({ name: nameText, price, url })
-      }
     }
 
-    // Strategy 2: Look for div/td elements containing both text and price
-    if (items.length === 0) {
-      const cells = doc.querySelectorAll("td, div, li")
-      for (const cell of cells) {
-        const cellText = cell.textContent?.trim() || ""
-        if (cellText.length > 200 || cellText.length < 5) continue
-        if (!/\$\d/.test(cellText)) continue
+    if (productTableItems.length > 0) {
+      return deduplicateItems(productTableItems).slice(0, 30)
+    }
 
-        // Check this isn't a parent of something we already found
-        const price = extractPrice(cellText)
-        const namePart = cellText
-          .replace(/\$\s?\d{1,6}(?:,\d{3})*(?:\.\d{2})?/g, "")
-          .replace(/\bQty:?\s*\d+/gi, "")
-          .replace(/\bQuantity:?\s*\d+/gi, "")
-          .replace(/\bSKU:?\s*\S+/gi, "")
-          .replace(/\bx\s*\d+\s*$/gi, "")
-          .replace(/\s+/g, " ")
-          .trim()
+    // === Strategy 2: Inline name+price in same element ===
+    // Look for elements where BOTH a product name and price coexist.
+    // Only use leaf-ish elements (no children that are also matches).
+    const inlineItems: RawItem[] = []
+    const candidates = doc.querySelectorAll("td, div, li, p, span")
+    const seen = new Set<string>()
 
-        if (namePart.length >= 5 && namePart.length <= 150 && !isJunkName(namePart)) {
-          // Try to find a link
-          let url: string | null = null
-          const link = cell.querySelector("a[href]")
-          if (link) {
-            const href = link.getAttribute("href") || ""
-            if (href.startsWith("http") && !href.includes("unsubscribe") && !href.includes("track")) {
-              url = href
-            }
-          }
-          items.push({ name: namePart, price, url })
-        }
-      }
+    for (const el of candidates) {
+      const elText = el.textContent?.trim() || ""
+      if (elText.length > 200 || elText.length < 8) continue
+      if (!/\$\d/.test(elText)) continue
+      // Skip if this element has child elements that also match (we want leaves)
+      const childMatch = el.querySelector("td, div, li, p, span")
+      if (childMatch && /\$\d/.test(childMatch.textContent || "")) continue
+
+      const price = extractPrice(elText)
+      if (price === null) continue
+
+      const namePart = cleanNameText(elText)
+      if (namePart.length < 5 || namePart.length > 120 || isJunkName(namePart)) continue
+
+      const key = `${namePart}::${price}`
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      inlineItems.push({ name: namePart, price, url: extractLinkFromElement(el) })
+    }
+
+    if (inlineItems.length > 0) {
+      return deduplicateItems(inlineItems).slice(0, 30)
     }
   }
 
-  // Strategy 3: Plain text fallback
-  if (items.length === 0) {
-    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
-    for (const line of lines) {
-      if (/\$\d/.test(line) && line.length < 150 && line.length > 5) {
-        const price = extractPrice(line)
-        const namePart = line
-          .replace(/\$\s?\d{1,6}(?:,\d{3})*(?:\.\d{2})?/g, "")
-          .replace(/\bQty:?\s*\d+/gi, "")
-          .replace(/\s+/g, " ")
-          .trim()
-        if (namePart.length >= 5 && !isJunkName(namePart)) {
-          items.push({ name: namePart, price, url: null })
-        }
-      }
+  // === Strategy 3: Plain text fallback — require name+price on same line ===
+  const textItems: RawItem[] = []
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
+  for (const line of lines) {
+    if (!/\$\d/.test(line) || line.length > 150 || line.length < 8) continue
+    const price = extractPrice(line)
+    if (price === null) continue
+    const namePart = cleanNameText(line)
+    if (namePart.length >= 5 && !isJunkName(namePart)) {
+      textItems.push({ name: namePart, price, url: null })
     }
   }
 
-  // Deduplicate: if one name is a substring of another, keep the shorter (cleaner) one
-  const deduped = deduplicateItems(items)
-
-  return deduped
+  return deduplicateItems(textItems).slice(0, 30)
 }
 
 function deduplicateItems(items: RawItem[]): RawItem[] {
@@ -397,32 +471,7 @@ export function parseReceiptEmail(
     return { products, order_total: orderTotal }
   }
 
-  // Fallback: create a single product from the subject line
-  // But only if the subject looks like it contains product info, not just "Your order confirmation"
-  const cleanSubject = subject
-    .replace(/^(re:|fwd?:|order confirmation|your order|receipt|thank you for your order)\s*[-:–]?\s*/gi, "")
-    .replace(/\s*[-–|]\s*order\s*#.*/i, "")
-    .replace(/\s*#\d+.*/i, "")
-    .trim()
-
-  if (cleanSubject.length > 5 && allPrices.length > 0 && !/^(your |order |receipt)/i.test(cleanSubject)) {
-    const fallbackCategory = guessCategory(cleanSubject)
-    return {
-      products: [{
-        name: cleanSubject,
-        brand: null,
-        price: allPrices.length > 1 ? allPrices[allPrices.length - 2] : allPrices[0] ?? null,
-        quantity: 1,
-        retailer,
-        order_id: orderId,
-        purchase_date: purchaseDate,
-        category_guess: fallbackCategory,
-        is_consumable: fallbackCategory === "Groceries & Consumables",
-        source_url: null,
-      }],
-      order_total: allPrices.length > 0 ? Math.max(...allPrices) : null,
-    }
-  }
-
+  // No products found — don't create garbage fallbacks from subject lines.
+  // It's better to skip an email than to create a junk product.
   return { products: [], order_total: null }
 }
