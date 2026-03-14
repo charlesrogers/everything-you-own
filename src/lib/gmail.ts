@@ -5,8 +5,10 @@ const IMPORTED_KEY = "eyo_imported_emails"
 
 // --- OAuth (redirect flow) ---
 
+const GOOGLE_CLIENT_ID = "862570667285-8i8nms9lu1qkinh6bpas6q6jdmb5v2bi.apps.googleusercontent.com"
+
 export function getGmailAuthUrl(): string {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""
+  const clientId = GOOGLE_CLIENT_ID
   const redirectUri = typeof window !== "undefined"
     ? `${window.location.origin}/api/auth/google/callback`
     : ""
