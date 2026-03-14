@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 
+const GOOGLE_CLIENT_ID = "862570667285-8i8nms9lu1qkinh6bpas6q6jdmb5v2bi.apps.googleusercontent.com"
+const PROD_REDIRECT_URI = "https://everythingyouown.vercel.app/api/auth/google/callback"
+
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code")
   const error = request.nextUrl.searchParams.get("error")
@@ -12,12 +15,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/import?error=no_code", request.url))
   }
 
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET
 
-  if (!clientId || !clientSecret) {
-    return NextResponse.redirect(new URL("/import?error=missing_config", request.url))
+  if (!clientSecret) {
+    return NextResponse.redirect(new URL("/import?error=missing_client_secret", request.url))
   }
+
+  // Use localhost redirect URI if running locally, prod otherwise
+  const isLocalhost = request.nextUrl.hostname === "localhost"
+  const redirectUri = isLocalhost
+    ? `${request.nextUrl.origin}/api/auth/google/callback`
+    : PROD_REDIRECT_URI
 
   // Exchange authorization code for access token
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -25,9 +33,9 @@ export async function GET(request: NextRequest) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: clientId,
+      client_id: GOOGLE_CLIENT_ID,
       client_secret: clientSecret,
-      redirect_uri: `${request.nextUrl.origin}/api/auth/google/callback`,
+      redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),
   })

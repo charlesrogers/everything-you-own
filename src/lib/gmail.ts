@@ -6,16 +6,19 @@ const IMPORTED_KEY = "eyo_imported_emails"
 // --- OAuth (redirect flow) ---
 
 const GOOGLE_CLIENT_ID = "862570667285-8i8nms9lu1qkinh6bpas6q6jdmb5v2bi.apps.googleusercontent.com"
+const PROD_ORIGIN = "https://everythingyouown.vercel.app"
+
+export function getRedirectUri(): string {
+  if (typeof window === "undefined") return `${PROD_ORIGIN}/api/auth/google/callback`
+  const isLocalhost = window.location.hostname === "localhost"
+  const origin = isLocalhost ? window.location.origin : PROD_ORIGIN
+  return `${origin}/api/auth/google/callback`
+}
 
 export function getGmailAuthUrl(): string {
-  const clientId = GOOGLE_CLIENT_ID
-  const redirectUri = typeof window !== "undefined"
-    ? `${window.location.origin}/api/auth/google/callback`
-    : ""
-
   const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: getRedirectUri(),
     response_type: "code",
     scope: "https://www.googleapis.com/auth/gmail.readonly",
     access_type: "online",
