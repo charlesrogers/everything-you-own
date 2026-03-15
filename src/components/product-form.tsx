@@ -25,7 +25,7 @@ import {
 import { ImageUpload } from "./image-upload"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Product, ProductStatus, ProductCondition, ProductOwnership, Category, Subcategory } from "@/lib/types"
-import { STATUS_OPTIONS, CONDITION_OPTIONS, OWNERSHIP_OPTIONS } from "@/lib/constants"
+import { STATUS_OPTIONS, CONDITION_OPTIONS, OWNERSHIP_OPTIONS, EXPENSE_TAGS } from "@/lib/constants"
 import {
   getCategories,
   getSubcategories,
@@ -526,7 +526,38 @@ export function ProductForm({ product, mode }: ProductFormProps) {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="tags" className="text-[13px]">Tags</Label>
+                <Label className="text-[13px]">Expense Tags</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {EXPENSE_TAGS.map((tag) => {
+                    const currentTags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean)
+                    const active = currentTags.includes(tag)
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean)
+                          if (active) {
+                            setTagsInput(tags.filter((t) => t !== tag).join(", "))
+                          } else {
+                            setTagsInput([...tags, tag].join(", "))
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-4xl text-[11px] font-medium border transition-colors ${
+                          active
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-secondary text-secondary-foreground border-border hover:bg-accent"
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="tags" className="text-[13px]">Custom Tags</Label>
                 <Input
                   id="tags"
                   value={tagsInput}

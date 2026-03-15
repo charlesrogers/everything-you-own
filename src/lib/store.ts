@@ -56,6 +56,34 @@ export function seedDefaultTaxonomy() {
   localStorage.setItem(KEYS.initialized, "true")
 }
 
+// Adds any missing categories from DEFAULT_TAXONOMY (for existing users who seeded before new categories were added)
+export function ensureDefaultCategories() {
+  if (typeof window === "undefined") return
+  const existing = get<Category>(KEYS.categories)
+  if (existing.length === 0) return // Not initialized yet, seedDefaultTaxonomy will handle it
+
+  const existingNames = new Set(existing.map((c) => c.name))
+  let maxSort = Math.max(...existing.map((c) => c.sort_order), 0)
+  const allSubs = get<Subcategory>(KEYS.subcategories)
+  let changed = false
+
+  for (const [catName, subs] of Object.entries(DEFAULT_TAXONOMY)) {
+    if (existingNames.has(catName)) continue
+    maxSort++
+    const catId = crypto.randomUUID()
+    existing.push({ id: catId, name: catName, sort_order: maxSort, is_default: true })
+    subs.forEach((subName, subIdx) => {
+      allSubs.push({ id: crypto.randomUUID(), category_id: catId, name: subName, sort_order: subIdx, is_default: true })
+    })
+    changed = true
+  }
+
+  if (changed) {
+    set(KEYS.categories, existing)
+    set(KEYS.subcategories, allSubs)
+  }
+}
+
 // --- Categories ---
 
 export function getCategories(): Category[] {

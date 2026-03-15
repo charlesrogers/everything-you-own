@@ -267,6 +267,8 @@ const CATEGORY_KEYWORDS: [RegExp, string][] = [
   [/\b(phone|laptop|tablet|headphone|charger|cable|camera|speaker|computer|monitor|keyboard|mouse|laser level|red dot|soldering)\b/i, "Electronics"],
   [/\b(grocery|food|snack|coffee|tea|pizza|chicken|rice|beef|pork|dumpling|pad thai|broccoli|cake|bundt)\b/i, "Groceries & Consumables"],
   [/\b(handguard|rifle|pistol|holster|magazine|optic|scope|barrel|stock|grip|trigger|ammo|ammunition|firearm)\b/i, "Firearms & Accessories"],
+  [/\b(software|subscription|domain|hosting|ssl|vpn|saas|license|e-?book|digital download)\b/i, "Digital"],
+  [/\b(repair|maintenance|membership|insurance|utilities|tax prep|filing|service plan)\b/i, "Services"],
 ]
 
 function guessCategory(name: string): string | null {
@@ -278,7 +280,7 @@ function guessCategory(name: string): string | null {
 
 // --- HTML text extraction with line breaks ---
 
-function htmlToText(html: string): string {
+export function htmlToText(html: string): string {
   if (typeof DOMParser === "undefined") return html.replace(/<[^>]+>/g, " ")
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, "text/html")

@@ -9,6 +9,9 @@ export const DEFAULT_TAXONOMY: Record<string, string[]> = {
   "Health & Wellness": ["Supplements", "Fitness Equipment", "Personal Care", "Medical & First Aid"],
   "Electronics": ["Devices", "Accessories", "Chargers & Cables", "Smart Home"],
   "Groceries & Consumables": ["Pantry", "Beverages", "Snacks", "Household Supplies", "Pet Supplies"],
+  "Digital": ["Software", "Subscriptions", "Digital Media", "Domain Names", "Apps", "Games", "E-books"],
+  "Services": ["Repairs & Maintenance", "Professional Services", "Memberships", "Insurance", "Utilities"],
+  "Firearms & Accessories": ["Firearms", "Optics & Sights", "Parts & Upgrades", "Ammunition", "Holsters & Storage", "Cleaning & Maintenance"],
 }
 
 export const STATUS_OPTIONS: { value: string; label: string }[] = [
@@ -31,4 +34,12 @@ export const OWNERSHIP_OPTIONS: { value: string; label: string }[] = [
   { value: "mine", label: "Mine" },
   { value: "household", label: "Household" },
   { value: "partner", label: "Partner" },
+]
+
+export const EXPENSE_TAGS = [
+  "Business Expense",
+  "Tax Writeoff",
+  "Gift",
+  "Reimbursable",
+  "Shared Expense",
 ]

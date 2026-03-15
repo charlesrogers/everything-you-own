@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import {
-  Mail, CheckCircle, AlertTriangle, Loader2, ChevronLeft,
+  Mail, CheckCircle, AlertTriangle, Loader2, ChevronLeft, ChevronRight,
   Package, Check, X,
 } from "lucide-react"
 import {
@@ -12,10 +12,10 @@ import {
   getMessageBody, getImportedEmailIds, markEmailsImported,
 } from "@/lib/gmail"
 import type { GmailMessageMeta } from "@/lib/gmail"
-import { parseReceiptEmail, classifyEmail } from "@/lib/receipt-parser"
-import { addProduct, getCategories, getSubcategories, checkDuplicates } from "@/lib/store"
+import { parseReceiptEmail, classifyEmail, htmlToText } from "@/lib/receipt-parser"
+import { addProduct, getCategories, getSubcategories, checkDuplicates, ensureDefaultCategories } from "@/lib/store"
 import type { Category, Subcategory, ProductOwnership } from "@/lib/types"
-import { OWNERSHIP_OPTIONS } from "@/lib/constants"
+import { OWNERSHIP_OPTIONS, EXPENSE_TAGS } from "@/lib/constants"
 
 type Phase = "connect" | "select" | "review"
 
@@ -39,6 +39,8 @@ interface DraftProduct {
   source_url: string
   included: boolean
   duplicateWarning: string | null
+  emailBody: string
+  tags: string[]
 }
 
 export default function ImportPage() {
@@ -72,6 +74,7 @@ function ImportContent() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
 
   useEffect(() => {
+    ensureDefaultCategories()
     setCategories(getCategories())
     setSubcategories(getSubcategories())
   }, [])
@@ -210,6 +213,7 @@ function ImportContent() {
       try {
         const html = await getMessageBody(token, email.id)
         const result = parseReceiptEmail(html, email.subject, email.from, email.date)
+        const emailText = htmlToText(html)
 
         const emailDrafts: DraftProduct[] = []
         for (const product of result.products) {
@@ -238,6 +242,8 @@ function ImportContent() {
             source_url: product.source_url || "",
             included: !duplicateWarning?.startsWith("Exact"),
             duplicateWarning,
+            emailBody: emailText,
+            tags: [],
           })
         }
 
@@ -284,8 +290,16 @@ function ImportContent() {
     setProcessing(false)
   }
 
-  const updateDraft = (index: number, field: keyof DraftProduct, value: string | boolean) => {
+  const updateDraft = (index: number, field: keyof DraftProduct, value: string | boolean | string[]) => {
     setDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, [field]: value } : d)))
+  }
+
+  const toggleTag = (index: number, tag: string) => {
+    setDrafts((prev) => prev.map((d, i) => {
+      if (i !== index) return d
+      const has = d.tags.includes(tag)
+      return { ...d, tags: has ? d.tags.filter((t) => t !== tag) : [...d.tags, tag] }
+    }))
   }
 
   const handleSave = () => {
@@ -307,7 +321,7 @@ function ImportContent() {
         source_url: draft.source_url || undefined,
         status: "purchased",
         currency: "USD",
-        tags: [],
+        tags: draft.tags,
       })
       emailIds.add(draft.emailId)
     }
@@ -686,6 +700,36 @@ function ImportContent() {
                       />
                       <span className="text-[12px] text-muted-foreground">Consumable (groceries, toiletries, etc.)</span>
                     </label>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {EXPENSE_TAGS.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => toggleTag(i, tag)}
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
+                            draft.tags.includes(tag)
+                              ? "bg-primary/10 border-primary/30 text-primary"
+                              : "bg-muted/50 border-transparent text-muted-foreground hover:border-border"
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Show first product per email only gets the email body disclosure */}
+                    {(i === 0 || drafts[i - 1]?.emailId !== draft.emailId) && draft.emailBody && (
+                      <details className="group">
+                        <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors flex items-center gap-1">
+                          <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
+                          See full email
+                        </summary>
+                        <pre className="mt-2 p-3 rounded-lg bg-muted/50 text-[11px] text-muted-foreground whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto leading-relaxed">
+                          {draft.emailBody}
+                        </pre>
+                      </details>
+                    )}
                   </div>
                 ))}
               </div>
