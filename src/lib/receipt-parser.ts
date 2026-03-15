@@ -113,6 +113,27 @@ const JUNK_NAME_PATTERNS: RegExp[] = [
   /\bper\s*month\b/i,
   /\/month\b/i,
   /\bmonthly\s*(charge|fee|rate|cost)\b/i,
+
+  // Policy/legal text
+  /^please (reference|note|review|see|read|check)/i,
+  /\b(key notes|important (information|notice))\b/i,
+  /\bregarding your (order|shipment|account)\b/i,
+  /\b(pick.?up|cancellation|restocking) fee\b/i,
+  /\b(insured|uninsured) shipping\b/i,
+  /\ball sales are final\b/i,
+  /\b(liable|liability|coverage)\b.*\b(carrier|shipping)\b/i,
+
+  // ISP/utility bill text
+  /^what to expect/i,
+  /\byour (first )?(monthly )?bill\b/i,
+  /\b(existing|current) (promotional )?discount\b/i,
+  /\bone.?time charges?\b/i,
+  /^in addition to your monthly/i,
+
+  // Promotional/deal text within receipt emails
+  /^(deals related to|recommended for|you might also|customers also|based on your)/i,
+  /^(shop by department|display images)/i,
+  /^(proof of purchase|subject to restock)/i,
 ]
 
 function isJunkName(name: string): boolean {
@@ -186,14 +207,16 @@ function detectRetailer(from: string, html: string): string {
 // --- Price extraction ---
 
 function extractPrice(text: string): number | null {
-  const match = text.match(/\$\s?(\d{1,6}(?:,\d{3})*(?:\.\d{2}))/)
+  const match = text.match(/\$\s?(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)/)
   if (!match) return null
   const val = parseFloat(match[1].replace(/,/g, ""))
+  // Skip tiny amounts without decimals (likely not real prices — e.g. "$1", "$2")
+  if (val < 5 && !match[1].includes(".")) return null
   return val > 0 && val < 100000 ? val : null
 }
 
 function extractAllPrices(text: string): number[] {
-  const matches = text.match(/\$\s?(\d{1,6}(?:,\d{3})*(?:\.\d{2}))/g) || []
+  const matches = text.match(/\$\s?(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)/g) || []
   return matches
     .map((m) => parseFloat(m.replace(/[$,\s]/g, "")))
     .filter((p) => p > 0 && p < 100000)
@@ -203,10 +226,12 @@ function extractAllPrices(text: string): number[] {
 
 function extractOrderId(text: string): string | null {
   const patterns = [
-    /order\s*#?\s*:?\s*([A-Z0-9][A-Z0-9\-]{4,30})/i,
-    /confirmation\s*#?\s*:?\s*([A-Z0-9][A-Z0-9\-]{4,30})/i,
-    /order\s+number\s*:?\s*([A-Z0-9][A-Z0-9\-]{4,30})/i,
-    /invoice\s*#?\s*:?\s*([A-Z0-9][A-Z0-9\-]{4,30})/i,
+    /order\s*#\s*:?\s*([A-Z0-9][A-Z0-9\-]{4,30})/i,         // "Order # 316526" or "Order #: 316526"
+    /order\s+number\s*:?\s*([A-Z0-9][A-Z0-9\-]{4,30})/i,     // "Order number: 316526"
+    /order:\s*#?\s*([A-Z0-9][A-Z0-9\-]{4,30})/i,             // "Order: #123" (Discogs style)
+    /confirmation\s*#\s*:?\s*([A-Z0-9][A-Z0-9\-]{4,30})/i,   // "Confirmation # 316526"
+    /invoice\s*#\s*:?\s*([A-Z0-9][A-Z0-9\-]{4,30})/i,        // "Invoice # 316526"
+    /transaction\s*#?\s*:?\s*(\d{4,30})/i,                    // "Transaction #: 258508"
   ]
   for (const p of patterns) {
     const m = text.match(p)
@@ -507,6 +532,12 @@ export function parseReceiptEmail(
   // Body-level subscription check (catches Google Play "Order Receipt" that are actually renewals)
   if (/\b(subscription|has renewed|auto.?renew)\b/i.test(text) && /\b(renew|recurring|monthly|annually)\b/i.test(text)) {
     console.log(`[receipt-parser] Skipping — body indicates subscription renewal`)
+    return { products: [], order_total: null }
+  }
+
+  // Body-level ISP/utility check (Cox, Comcast, etc. — service orders, not product purchases)
+  if (/\b(monthly price|your bill|promotional discount)\b/i.test(text) && /\b(internet|cable|tv service|wifi|wi-fi|broadband|gigabit|mbps|cox|comcast|xfinity|spectrum)\b/i.test(text)) {
+    console.log(`[receipt-parser] Skipping — body indicates ISP/utility service order`)
     return { products: [], order_total: null }
   }
   const retailer = detectRetailer(from, html)

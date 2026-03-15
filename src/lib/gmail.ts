@@ -57,7 +57,7 @@ export async function searchReceipts(
   timeframe: string = "1y",
   pageToken?: string
 ): Promise<GmailSearchResult> {
-  const q = `subject:(order confirmation OR receipt OR "order confirmed" OR "payment confirmation" OR invoice OR "order summary") -subject:(shipped OR "out for delivery" OR delivered OR "has arrived" OR "track your" OR "how was" OR "rate your" OR "review your" OR "ready for pickup" OR "picked up") ${TIMEFRAME_QUERIES[timeframe] || "newer_than:1y"}`
+  const q = `subject:(order OR receipt OR invoice OR confirmation OR purchase) -subject:(shipped OR "out for delivery" OR delivered OR "has arrived" OR "track your" OR "how was" OR "rate your" OR "review your" OR "ready for pickup" OR "picked up" OR "items from your list" OR "add to cart" OR newsletter OR unsubscribe) ${TIMEFRAME_QUERIES[timeframe] || "newer_than:1y"}`
   const params = new URLSearchParams({ q, maxResults: "20" })
   if (pageToken) params.set("pageToken", pageToken)
 
