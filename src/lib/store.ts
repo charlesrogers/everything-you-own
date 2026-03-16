@@ -1,10 +1,11 @@
-import { Product, Category, Subcategory, SortField, SortDirection, ProductStatus, ProductOwnership } from "./types"
+import { Product, Category, Subcategory, ProductRelationship, RelationshipType, SortField, SortDirection, ProductStatus, ProductOwnership } from "./types"
 import { DEFAULT_TAXONOMY } from "./constants"
 
 const KEYS = {
   products: "eyo_products",
   categories: "eyo_categories",
   subcategories: "eyo_subcategories",
+  relationships: "eyo_relationships",
   initialized: "eyo_initialized",
 }
 
@@ -173,6 +174,8 @@ export function updateProduct(id: string, updates: Partial<Product>) {
 
 export function deleteProduct(id: string) {
   set(KEYS.products, getProducts().filter((p) => p.id !== id))
+  // Cascade delete relationships
+  set(KEYS.relationships, getRelationships().filter((r) => r.product_a !== id && r.product_b !== id))
 }
 
 // --- Search ---
@@ -329,6 +332,7 @@ export function exportAllData(): string {
     products: getProducts(),
     categories: getCategories(),
     subcategories: getSubcategories(),
+    relationships: getRelationships(),
   }, null, 2)
 }
 
@@ -337,6 +341,7 @@ export function importAllData(json: string) {
   if (data.products) set(KEYS.products, data.products)
   if (data.categories) set(KEYS.categories, data.categories)
   if (data.subcategories) set(KEYS.subcategories, data.subcategories)
+  if (data.relationships) set(KEYS.relationships, data.relationships)
   localStorage.setItem(KEYS.initialized, "true")
 }
 
@@ -456,6 +461,60 @@ export function getRecentProducts(limit: number): Product[] {
   return getProducts()
     .sort((a, b) => b.date_added.localeCompare(a.date_added))
     .slice(0, limit)
+}
+
+// --- Relationships ---
+
+export function getRelationships(): ProductRelationship[] {
+  return get<ProductRelationship>(KEYS.relationships)
+}
+
+export function addRelationship(
+  productA: string,
+  productB: string,
+  type: RelationshipType,
+  notes?: string
+): ProductRelationship {
+  const rel: ProductRelationship = {
+    id: crypto.randomUUID(),
+    product_a: productA,
+    product_b: productB,
+    relationship_type: type,
+    notes,
+    created_at: new Date().toISOString(),
+  }
+  set(KEYS.relationships, [...getRelationships(), rel])
+  return rel
+}
+
+export function deleteRelationship(id: string) {
+  set(KEYS.relationships, getRelationships().filter((r) => r.id !== id))
+}
+
+export interface RelatedProductResult {
+  relationship: ProductRelationship
+  product: Product
+  type: RelationshipType
+  direction: "forward" | "reverse"
+}
+
+export function getRelatedProducts(productId: string): RelatedProductResult[] {
+  const rels = getRelationships()
+  const products = getProducts()
+  const productMap = new Map(products.map((p) => [p.id, p]))
+  const results: RelatedProductResult[] = []
+
+  for (const r of rels) {
+    if (r.product_a === productId) {
+      const p = productMap.get(r.product_b)
+      if (p) results.push({ relationship: r, product: p, type: r.relationship_type, direction: "forward" })
+    } else if (r.product_b === productId) {
+      const p = productMap.get(r.product_a)
+      if (p) results.push({ relationship: r, product: p, type: r.relationship_type, direction: "reverse" })
+    }
+  }
+
+  return results
 }
 
 // --- Analytics ---

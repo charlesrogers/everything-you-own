@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Edit, Trash2, ExternalLink, Star, Package } from "lucide-react"
+import { ArrowLeft, Edit, Trash2, ExternalLink, Star, Package, Link2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -16,7 +16,9 @@ import {
 } from "@/components/ui/dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { Product, Category, Subcategory } from "@/lib/types"
-import { getProduct, getCategories, getSubcategories, deleteProduct } from "@/lib/store"
+import { getProduct, getCategories, getSubcategories, deleteProduct, getRelatedProducts, deleteRelationship, type RelatedProductResult } from "@/lib/store"
+import { getRelationshipLabel } from "@/lib/relationship-labels"
+import { ProductPickerDialog } from "@/components/product-picker-dialog"
 
 export default function ProductDetailPage() {
   const params = useParams()
@@ -25,6 +27,12 @@ export default function ProductDetailPage() {
   const [category, setCategory] = useState<Category | undefined>()
   const [subcategory, setSubcategory] = useState<Subcategory | undefined>()
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showLinkDialog, setShowLinkDialog] = useState(false)
+  const [relatedProducts, setRelatedProducts] = useState<RelatedProductResult[]>([])
+
+  function loadRelated() {
+    setRelatedProducts(getRelatedProducts(params.id as string))
+  }
 
   useEffect(() => {
     const p = getProduct(params.id as string)
@@ -37,6 +45,8 @@ export default function ProductDetailPage() {
     const subs = getSubcategories()
     setCategory(cats.find((c) => c.id === p.category_id))
     setSubcategory(subs.find((s) => s.id === p.subcategory_id))
+    loadRelated()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, router])
 
   if (!product) return null
@@ -177,6 +187,63 @@ export default function ProductDetailPage() {
           </p>
         </div>
       </div>
+
+      {/* Related Products */}
+      <div className="mt-8">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[15px] font-semibold">Related Products</h2>
+          <Button variant="outline" size="sm" onClick={() => setShowLinkDialog(true)}>
+            <Link2 className="size-3.5" />
+            Link Product
+          </Button>
+        </div>
+        {relatedProducts.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground py-4">No related products yet. Link products that go together.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {relatedProducts.map((rp) => (
+              <div key={rp.relationship.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border hover:bg-accent/50 transition-colors">
+                <Link href={`/products/${rp.product.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                  {rp.product.image_url ? (
+                    <img src={rp.product.image_url} alt="" className="size-8 rounded object-cover" />
+                  ) : (
+                    <div className="size-8 rounded bg-muted flex items-center justify-center text-[10px] text-muted-foreground">
+                      {rp.product.name.charAt(0)}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium truncate">{rp.product.name}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {getRelationshipLabel(rp.type, rp.direction)}
+                      {rp.relationship.notes && ` · ${rp.relationship.notes}`}
+                    </p>
+                  </div>
+                  {rp.product.price != null && (
+                    <span className="text-[12px] text-muted-foreground">${rp.product.price.toFixed(2)}</span>
+                  )}
+                </Link>
+                <button
+                  onClick={() => {
+                    deleteRelationship(rp.relationship.id)
+                    loadRelated()
+                  }}
+                  className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Link Product Dialog */}
+      <ProductPickerDialog
+        open={showLinkDialog}
+        onOpenChange={setShowLinkDialog}
+        sourceProductId={product.id}
+        onCreated={loadRelated}
+      />
 
       {/* Delete Confirmation */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
