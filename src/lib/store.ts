@@ -457,3 +457,86 @@ export function getRecentProducts(limit: number): Product[] {
     .sort((a, b) => b.date_added.localeCompare(a.date_added))
     .slice(0, limit)
 }
+
+// --- Analytics ---
+
+export interface MonthlySpending {
+  month: string
+  amount: number
+}
+
+export function getMonthlySpending(tag?: string): MonthlySpending[] {
+  let products = getProducts().filter((p) => p.status === "purchased" && p.price != null)
+  if (tag) products = products.filter((p) => (p.tags || []).includes(tag))
+  const monthly: Record<string, number> = {}
+  for (const p of products) {
+    const d = p.purchase_date || p.date_added
+    const month = d.slice(0, 7)
+    monthly[month] = (monthly[month] || 0) + (p.price || 0)
+  }
+  return Object.entries(monthly)
+    .map(([month, amount]) => ({ month, amount }))
+    .sort((a, b) => a.month.localeCompare(b.month))
+}
+
+export function getStatusDistribution(): { status: string; count: number }[] {
+  const counts: Record<string, number> = {}
+  for (const p of getProducts()) {
+    counts[p.status] = (counts[p.status] || 0) + 1
+  }
+  return Object.entries(counts).map(([status, count]) => ({ status, count }))
+}
+
+export function getOwnershipDistribution(): { ownership: string; count: number }[] {
+  const counts: Record<string, number> = {}
+  for (const p of getProducts()) {
+    const own = p.ownership || "mine"
+    counts[own] = (counts[own] || 0) + 1
+  }
+  return Object.entries(counts).map(([ownership, count]) => ({ ownership, count }))
+}
+
+export function getTopExpensiveProducts(limit: number): Product[] {
+  return getProducts()
+    .filter((p) => p.price != null)
+    .sort((a, b) => (b.price || 0) - (a.price || 0))
+    .slice(0, limit)
+}
+
+export function getAllTags(): string[] {
+  const tags = new Set<string>()
+  for (const p of getProducts()) {
+    for (const t of p.tags || []) tags.add(t)
+  }
+  return [...tags].sort()
+}
+
+export interface MonthComparison {
+  metric: string
+  thisMonth: number
+  lastMonth: number
+  change: number
+}
+
+export function getMonthOverMonthComparison(): MonthComparison[] {
+  const now = new Date()
+  const thisMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const lastMonthStr = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`
+
+  const purchased = getProducts().filter((p) => p.status === "purchased" && p.price != null)
+
+  const thisMonthProducts = purchased.filter((p) => (p.purchase_date || p.date_added).startsWith(thisMonthStr))
+  const lastMonthProducts = purchased.filter((p) => (p.purchase_date || p.date_added).startsWith(lastMonthStr))
+
+  const thisSpend = thisMonthProducts.reduce((s, p) => s + (p.price || 0), 0)
+  const lastSpend = lastMonthProducts.reduce((s, p) => s + (p.price || 0), 0)
+  const thisAvg = thisMonthProducts.length ? thisSpend / thisMonthProducts.length : 0
+  const lastAvg = lastMonthProducts.length ? lastSpend / lastMonthProducts.length : 0
+
+  return [
+    { metric: "Total Spend", thisMonth: thisSpend, lastMonth: lastSpend, change: lastSpend ? ((thisSpend - lastSpend) / lastSpend) * 100 : 0 },
+    { metric: "Items", thisMonth: thisMonthProducts.length, lastMonth: lastMonthProducts.length, change: lastMonthProducts.length ? ((thisMonthProducts.length - lastMonthProducts.length) / lastMonthProducts.length) * 100 : 0 },
+    { metric: "Avg Price", thisMonth: thisAvg, lastMonth: lastAvg, change: lastAvg ? ((thisAvg - lastAvg) / lastAvg) * 100 : 0 },
+  ]
+}
