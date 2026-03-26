@@ -3,30 +3,46 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Package, AlertTriangle, ShoppingBag, Clock } from "lucide-react"
-import { getReturnAlerts, getWarrantyAlerts, getSpendingByCategory, getRecentProducts } from "@/lib/store"
-import { getCategories, getSubcategories } from "@/lib/store"
 import type { ReturnAlert, CategorySpending } from "@/lib/store"
 import type { Product, Category, Subcategory } from "@/lib/types"
 import { ReturnAlertCard } from "@/components/return-alert"
 import { SpendingCard } from "@/components/spending-card"
 import { StatusBadge } from "@/components/status-badge"
+import { useStore } from "@/hooks/use-store"
+import { LoadingSkeleton } from "@/components/loading-skeleton"
 
 export default function DashboardPage() {
+  const store = useStore()
   const [returnAlerts, setReturnAlerts] = useState<ReturnAlert[]>([])
   const [warrantyAlerts, setWarrantyAlerts] = useState<ReturnAlert[]>([])
   const [spending, setSpending] = useState<CategorySpending[]>([])
   const [recent, setRecent] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setReturnAlerts(getReturnAlerts())
-    setWarrantyAlerts(getWarrantyAlerts())
-    setSpending(getSpendingByCategory())
-    setRecent(getRecentProducts(10))
-    setCategories(getCategories())
-    setSubcategories(getSubcategories())
-  }, [])
+    async function load() {
+      const [ra, wa, sp, rec, cats, subs] = await Promise.all([
+        store.getReturnAlerts(),
+        store.getWarrantyAlerts(),
+        store.getSpendingByCategory(),
+        store.getRecentProducts(10),
+        store.getCategories(),
+        store.getSubcategories(),
+      ])
+      setReturnAlerts(ra)
+      setWarrantyAlerts(wa)
+      setSpending(sp)
+      setRecent(rec)
+      setCategories(cats)
+      setSubcategories(subs)
+      setLoading(false)
+    }
+    load()
+  }, [store])
+
+  if (loading) return <LoadingSkeleton />
 
   const catMap = new Map(categories.map((c) => [c.id, c]))
   const subMap = new Map(subcategories.map((s) => [s.id, s]))

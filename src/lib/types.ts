@@ -77,6 +77,23 @@ export interface ProductRelationship {
   created_at: string
 }
 
+// Re-export WMS types for convenience
+export type {
+  Location,
+  LocationType,
+  LocationTreeNode,
+  LocationBreadcrumb,
+  LocationTemplate,
+  ProductLocation,
+  ProductLocationWithProduct,
+  UsageLogEntry,
+  MeasurementUnit,
+  UnitSubtype,
+  CreateLocationInput,
+  AddProductToLocationInput,
+  LogUsageInput,
+} from './wms-types'
+
 export type SortField = "date_added" | "price" | "name" | "purchase_date"
 export type SortDirection = "asc" | "desc"
 export type ViewMode = "grid" | "list"

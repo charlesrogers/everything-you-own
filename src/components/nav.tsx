@@ -3,13 +3,16 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
-import { LayoutDashboard, RotateCcw, Package, Download, Grid3X3, Settings, Sun, Moon, BarChart3 } from "lucide-react"
+import { LayoutDashboard, RotateCcw, Package, Download, Grid3X3, Settings, Sun, Moon, BarChart3, LogOut, Warehouse } from "lucide-react"
 import { useEffect, useState } from "react"
+import { useAuth } from "@/components/auth-provider"
+import { USE_SUPABASE } from "@/lib/feature-flags"
 
 const links = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/returns", label: "Returns", icon: RotateCcw },
+  { href: "/storage", label: "Storage", icon: Warehouse },
   { href: "/products", label: "Products", icon: Package },
   { href: "/import", label: "Import", icon: Download },
   { href: "/categories", label: "Categories", icon: Grid3X3 },
@@ -19,6 +22,7 @@ const links = [
 export function Nav() {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
+  const { user, signOut } = useAuth()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => setMounted(true), [])
@@ -48,14 +52,25 @@ export function Nav() {
             )
           })}
         </div>
-        {mounted && (
-          <button
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="flex items-center justify-center size-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {mounted && (
+            <button
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="flex items-center justify-center size-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </button>
+          )}
+          {USE_SUPABASE && user && (
+            <button
+              onClick={signOut}
+              className="flex items-center justify-center size-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="size-4" />
+            </button>
+          )}
+        </div>
       </div>
     </nav>
   )

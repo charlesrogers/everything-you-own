@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Edit, Trash2, ExternalLink, Star, Package, Link2, X } from "lucide-react"
@@ -16,43 +16,55 @@ import {
 } from "@/components/ui/dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { Product, Category, Subcategory } from "@/lib/types"
-import { getProduct, getCategories, getSubcategories, deleteProduct, getRelatedProducts, deleteRelationship, type RelatedProductResult } from "@/lib/store"
+import type { RelatedProductResult } from "@/lib/store"
 import { getRelationshipLabel } from "@/lib/relationship-labels"
 import { ProductPickerDialog } from "@/components/product-picker-dialog"
+import { useStore } from "@/hooks/use-store"
+import { LoadingSkeleton } from "@/components/loading-skeleton"
 
 export default function ProductDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const store = useStore()
   const [product, setProduct] = useState<Product | null>(null)
   const [category, setCategory] = useState<Category | undefined>()
   const [subcategory, setSubcategory] = useState<Subcategory | undefined>()
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showLinkDialog, setShowLinkDialog] = useState(false)
   const [relatedProducts, setRelatedProducts] = useState<RelatedProductResult[]>([])
+  const [loading, setLoading] = useState(true)
 
-  function loadRelated() {
-    setRelatedProducts(getRelatedProducts(params.id as string))
-  }
+  const loadRelated = useCallback(async () => {
+    const related = await store.getRelatedProducts(params.id as string)
+    setRelatedProducts(related)
+  }, [store, params.id])
 
   useEffect(() => {
-    const p = getProduct(params.id as string)
-    if (!p) {
-      router.push("/products")
-      return
+    async function load() {
+      const [p, cats, subs] = await Promise.all([
+        store.getProduct(params.id as string),
+        store.getCategories(),
+        store.getSubcategories(),
+      ])
+      if (!p) {
+        router.push("/products")
+        return
+      }
+      setProduct(p)
+      setCategory(cats.find((c) => c.id === p.category_id))
+      setSubcategory(subs.find((s) => s.id === p.subcategory_id))
+      await loadRelated()
+      setLoading(false)
     }
-    setProduct(p)
-    const cats = getCategories()
-    const subs = getSubcategories()
-    setCategory(cats.find((c) => c.id === p.category_id))
-    setSubcategory(subs.find((s) => s.id === p.subcategory_id))
-    loadRelated()
+    load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.id, router])
+  }, [params.id, router, store])
 
+  if (loading) return <LoadingSkeleton />
   if (!product) return null
 
-  function handleDelete() {
-    deleteProduct(product!.id)
+  async function handleDelete() {
+    await store.deleteProduct(product!.id)
     router.push("/products")
   }
 
@@ -223,9 +235,9 @@ export default function ProductDetailPage() {
                   )}
                 </Link>
                 <button
-                  onClick={() => {
-                    deleteRelationship(rp.relationship.id)
-                    loadRelated()
+                  onClick={async () => {
+                    await store.deleteRelationship(rp.relationship.id)
+                    await loadRelated()
                   }}
                   className="text-muted-foreground hover:text-destructive transition-colors p-1"
                 >

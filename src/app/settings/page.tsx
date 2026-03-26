@@ -11,15 +11,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { exportAllData, importAllData, clearAllData } from "@/lib/store"
+import { useStore } from "@/hooks/use-store"
 
 export default function SettingsPage() {
+  const store = useStore()
   const [showClearDialog, setShowClearDialog] = useState(false)
   const [importStatus, setImportStatus] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  function handleExport() {
-    const json = exportAllData()
+  async function handleExport() {
+    const json = await store.exportAllData()
     const blob = new Blob([json], { type: "application/json" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -33,9 +34,9 @@ export default function SettingsPage() {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
-        importAllData(ev.target?.result as string)
+        await store.importAllData(ev.target?.result as string)
         setImportStatus("Data imported successfully. Refresh the page to see changes.")
       } catch {
         setImportStatus("Import failed. The file may be corrupted.")
@@ -44,8 +45,8 @@ export default function SettingsPage() {
     reader.readAsText(file)
   }
 
-  function handleClear() {
-    clearAllData()
+  async function handleClear() {
+    await store.clearAllData()
     setShowClearDialog(false)
     window.location.reload()
   }

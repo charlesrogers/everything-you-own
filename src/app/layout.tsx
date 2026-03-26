@@ -4,6 +4,7 @@ import "./globals.css"
 import { Nav } from "@/components/nav"
 import { ThemeProvider } from "@/components/theme-provider"
 import { StoreInitializer } from "@/components/store-initializer"
+import { AuthProvider } from "@/components/auth-provider"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,9 +30,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ThemeProvider>
-          <StoreInitializer />
-          <Nav />
-          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+          <AuthProvider>
+            <StoreInitializer />
+            <Nav />
+            <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

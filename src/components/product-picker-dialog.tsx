@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { Product } from "@/lib/types"
 import type { RelationshipType } from "@/lib/types"
-import { searchProducts, addRelationship } from "@/lib/store"
+import { useStore } from "@/hooks/use-store"
 import { AVAILABLE_RELATIONSHIP_TYPES } from "@/lib/relationship-labels"
 
 interface Props {
@@ -34,25 +34,34 @@ interface Props {
 }
 
 export function ProductPickerDialog({ open, onOpenChange, sourceProductId, onCreated }: Props) {
+  const store = useStore()
   const [step, setStep] = useState<"search" | "type">("search")
   const [query, setQuery] = useState("")
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [relType, setRelType] = useState<RelationshipType>("goes_with")
   const [notes, setNotes] = useState("")
+  const [results, setResults] = useState<Product[]>([])
 
-  const results = useMemo(() => {
-    if (!query.trim()) return []
-    return searchProducts(query).filter((p) => p.id !== sourceProductId).slice(0, 10)
-  }, [query, sourceProductId])
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([])
+      return
+    }
+    let cancelled = false
+    store.searchProducts(query).then((r) => {
+      if (!cancelled) setResults(r.filter((p) => p.id !== sourceProductId).slice(0, 10))
+    })
+    return () => { cancelled = true }
+  }, [store, query, sourceProductId])
 
   function handleSelectProduct(product: Product) {
     setSelectedProduct(product)
     setStep("type")
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!selectedProduct) return
-    addRelationship(sourceProductId, selectedProduct.id, relType, notes || undefined)
+    await store.addRelationship(sourceProductId, selectedProduct.id, relType, notes || undefined)
     handleClose()
     onCreated()
   }

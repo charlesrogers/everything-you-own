@@ -19,9 +19,11 @@ import { ProductRow } from "@/components/product-row"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Product, Category, Subcategory, ProductStatus, ProductOwnership, SortField, ViewMode } from "@/lib/types"
 import { OWNERSHIP_OPTIONS } from "@/lib/constants"
-import { filterProducts, getCategories, getSubcategories } from "@/lib/store"
+import { useStore } from "@/hooks/use-store"
+import { LoadingSkeleton } from "@/components/loading-skeleton"
 
 export default function ProductsPage() {
+  const store = useStore()
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
@@ -32,16 +34,23 @@ export default function ProductsPage() {
   const [ownership, setOwnership] = useState<ProductOwnership | "all">("all")
   const [hideConsumables, setHideConsumables] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>("grid")
-  const [mounted, setMounted] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setMounted(true)
-    setCategories(getCategories())
-    setSubcategories(getSubcategories())
-  }, [])
+    async function init() {
+      const [cats, subs] = await Promise.all([
+        store.getCategories(),
+        store.getSubcategories(),
+      ])
+      setCategories(cats)
+      setSubcategories(subs)
+      setLoading(false)
+    }
+    init()
+  }, [store])
 
-  const refreshProducts = useCallback(() => {
-    const filtered = filterProducts({
+  const refreshProducts = useCallback(async () => {
+    const filtered = await store.filterProducts({
       status,
       categoryId: categoryId || undefined,
       query: query || undefined,
@@ -51,11 +60,11 @@ export default function ProductsPage() {
       hideConsumables,
     })
     setProducts(filtered)
-  }, [status, categoryId, query, sortField, ownership, hideConsumables])
+  }, [store, status, categoryId, query, sortField, ownership, hideConsumables])
 
   useEffect(() => {
-    if (mounted) refreshProducts()
-  }, [mounted, refreshProducts])
+    if (!loading) refreshProducts()
+  }, [loading, refreshProducts])
 
   const catMap = useMemo(() => {
     const m = new Map<string, Category>()
@@ -69,7 +78,7 @@ export default function ProductsPage() {
     return m
   }, [subcategories])
 
-  if (!mounted) return null
+  if (loading) return <LoadingSkeleton />
 
   return (
     <div className="space-y-4">

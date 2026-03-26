@@ -9,11 +9,11 @@ import {
 } from "lucide-react"
 import {
   getGmailAuthUrl, searchReceipts, batchGetMetadata,
-  getMessageBody, getImportedEmailIds, markEmailsImported,
+  getMessageBody,
 } from "@/lib/gmail"
 import type { GmailMessageMeta } from "@/lib/gmail"
 import { parseReceiptEmail, classifyEmail, htmlToText } from "@/lib/receipt-parser"
-import { addProduct, getCategories, getSubcategories, checkDuplicates, ensureDefaultCategories } from "@/lib/store"
+import { useStore } from "@/hooks/use-store"
 import type { Category, Subcategory, ProductOwnership } from "@/lib/types"
 import { OWNERSHIP_OPTIONS, EXPENSE_TAGS } from "@/lib/constants"
 
@@ -53,6 +53,7 @@ export default function ImportPage() {
 
 function ImportContent() {
   const searchParams = useSearchParams()
+  const store = useStore()
   const [phase, setPhase] = useState<Phase>("connect")
   const [token, setToken] = useState("")
   const [error, setError] = useState("")
@@ -74,10 +75,17 @@ function ImportContent() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
 
   useEffect(() => {
-    ensureDefaultCategories()
-    setCategories(getCategories())
-    setSubcategories(getSubcategories())
-  }, [])
+    async function init() {
+      await store.ensureDefaultCategories()
+      const [cats, subs] = await Promise.all([
+        store.getCategories(),
+        store.getSubcategories(),
+      ])
+      setCategories(cats)
+      setSubcategories(subs)
+    }
+    init()
+  }, [store])
 
   // Check for OAuth redirect callback
   useEffect(() => {
@@ -131,7 +139,7 @@ function ImportContent() {
       }
 
       const metas = await batchGetMetadata(accessToken, result.messages.map((m) => m.id))
-      const imported = getImportedEmailIds()
+      const imported = await store.getImportedEmailIds()
       const entries: EmailEntry[] = metas.map((m) => ({
         ...m,
         selected: !imported.has(m.id),
@@ -219,7 +227,7 @@ function ImportContent() {
         for (const product of result.products) {
           const { categoryId, subcategoryId } = mapCategoryGuess(product.category_guess)
 
-          const dupes = checkDuplicates({ name: product.name, brand: product.brand || undefined })
+          const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
           const duplicateWarning =
             dupes.exact.length > 0
               ? `Exact match: ${dupes.exact[0].name}`
@@ -302,12 +310,12 @@ function ImportContent() {
     }))
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const toSave = drafts.filter((d) => d.included)
     const emailIds = new Set<string>()
 
     for (const draft of toSave) {
-      addProduct({
+      await store.addProduct({
         name: draft.name,
         brand: draft.brand || undefined,
         category_id: draft.category_id,
@@ -326,7 +334,7 @@ function ImportContent() {
       emailIds.add(draft.emailId)
     }
 
-    markEmailsImported([...emailIds])
+    await store.markEmailsImported([...emailIds])
     setSaved(true)
   }
 

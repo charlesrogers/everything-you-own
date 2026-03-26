@@ -1,24 +1,15 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Plus, Trash2, ChevronDown, ChevronRight, GripVertical } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Category, Subcategory } from "@/lib/types"
-import {
-  getCategories,
-  getSubcategories,
-  addCategory,
-  updateCategory,
-  deleteCategory,
-  addSubcategory,
-  updateSubcategory,
-  deleteSubcategory,
-  getProductCountsByCategory,
-  getProductCountsBySubcategory,
-} from "@/lib/store"
+import { useStore } from "@/hooks/use-store"
+import { LoadingSkeleton } from "@/components/loading-skeleton"
 
 export default function CategoriesPage() {
+  const store = useStore()
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -29,15 +20,26 @@ export default function CategoriesPage() {
   const [newSubName, setNewSubName] = useState("")
   const [catCounts, setCatCounts] = useState<Record<string, number>>({})
   const [subCounts, setSubCounts] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
 
-  function refresh() {
-    setCategories(getCategories())
-    setSubcategories(getSubcategories())
-    setCatCounts(getProductCountsByCategory())
-    setSubCounts(getProductCountsBySubcategory())
-  }
+  const refresh = useCallback(async () => {
+    const [cats, subs, cc, sc] = await Promise.all([
+      store.getCategories(),
+      store.getSubcategories(),
+      store.getProductCountsByCategory(),
+      store.getProductCountsBySubcategory(),
+    ])
+    setCategories(cats)
+    setSubcategories(subs)
+    setCatCounts(cc)
+    setSubCounts(sc)
+  }, [store])
 
-  useEffect(refresh, [])
+  useEffect(() => {
+    refresh().then(() => setLoading(false))
+  }, [refresh])
+
+  if (loading) return <LoadingSkeleton />
 
   function toggleExpanded(id: string) {
     const next = new Set(expanded)
@@ -45,19 +47,19 @@ export default function CategoriesPage() {
     setExpanded(next)
   }
 
-  function handleAddCategory() {
+  async function handleAddCategory() {
     if (!newCatName.trim()) return
-    addCategory(newCatName.trim())
+    await store.addCategory(newCatName.trim())
     setNewCatName("")
-    refresh()
+    await refresh()
   }
 
-  function handleAddSubcategory(categoryId: string) {
+  async function handleAddSubcategory(categoryId: string) {
     if (!newSubName.trim()) return
-    addSubcategory(categoryId, newSubName.trim())
+    await store.addSubcategory(categoryId, newSubName.trim())
     setNewSubName("")
     setAddingSubTo(null)
-    refresh()
+    await refresh()
   }
 
   function startEditing(id: string, currentName: string) {
@@ -65,27 +67,27 @@ export default function CategoriesPage() {
     setEditValue(currentName)
   }
 
-  function saveEdit(type: "category" | "subcategory") {
+  async function saveEdit(type: "category" | "subcategory") {
     if (!editingId || !editValue.trim()) return
     if (type === "category") {
-      updateCategory(editingId, { name: editValue.trim() })
+      await store.updateCategory(editingId, { name: editValue.trim() })
     } else {
-      updateSubcategory(editingId, { name: editValue.trim() })
+      await store.updateSubcategory(editingId, { name: editValue.trim() })
     }
     setEditingId(null)
-    refresh()
+    await refresh()
   }
 
-  function handleDeleteCategory(id: string) {
+  async function handleDeleteCategory(id: string) {
     if (catCounts[id]) return // Don't delete categories with products
-    deleteCategory(id)
-    refresh()
+    await store.deleteCategory(id)
+    await refresh()
   }
 
-  function handleDeleteSubcategory(id: string) {
+  async function handleDeleteSubcategory(id: string) {
     if (subCounts[id]) return
-    deleteSubcategory(id)
-    refresh()
+    await store.deleteSubcategory(id)
+    await refresh()
   }
 
   return (

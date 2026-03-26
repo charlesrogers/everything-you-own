@@ -3,22 +3,31 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { RotateCcw, Clock, Package, Store, Calendar, DollarSign } from "lucide-react"
-import { getReturnAlerts, ReturnAlert, getCategories } from "@/lib/store"
+import type { ReturnAlert } from "@/lib/store"
 import { Category } from "@/lib/types"
+import { useStore } from "@/hooks/use-store"
+import { LoadingSkeleton } from "@/components/loading-skeleton"
 
 export default function ReturnsPage() {
+  const store = useStore()
   const [alerts, setAlerts] = useState<ReturnAlert[]>([])
   const [categories, setCategories] = useState<Map<string, Category>>(new Map())
-  const [mounted, setMounted] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setAlerts(getReturnAlerts())
-    const cats = getCategories()
-    setCategories(new Map(cats.map((c) => [c.id, c])))
-    setMounted(true)
-  }, [])
+    async function load() {
+      const [alertsData, cats] = await Promise.all([
+        store.getReturnAlerts(),
+        store.getCategories(),
+      ])
+      setAlerts(alertsData)
+      setCategories(new Map(cats.map((c) => [c.id, c])))
+      setLoading(false)
+    }
+    load()
+  }, [store])
 
-  if (!mounted) return null
+  if (loading) return <LoadingSkeleton />
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">

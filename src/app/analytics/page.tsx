@@ -1,18 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Filter } from "lucide-react"
-import {
-  getMonthlySpending,
-  getSpendingByCategory,
-  getStatusDistribution,
-  getOwnershipDistribution,
-  getTopExpensiveProducts,
-  getAllTags,
-  getMonthOverMonthComparison,
-  type MonthlySpending,
-  type CategorySpending,
-  type MonthComparison,
+import type {
+  MonthlySpending,
+  CategorySpending,
+  MonthComparison,
 } from "@/lib/store"
 import type { Product } from "@/lib/types"
 import { MonthlySpendingChart } from "@/components/analytics/monthly-spending-chart"
@@ -21,8 +14,11 @@ import { StatusDistributionChart } from "@/components/analytics/status-distribut
 import { MonthComparisonCard } from "@/components/analytics/month-comparison-card"
 import { TopItemsList } from "@/components/analytics/top-items-list"
 import { OwnershipChart } from "@/components/analytics/ownership-chart"
+import { useStore } from "@/hooks/use-store"
+import { LoadingSkeleton } from "@/components/loading-skeleton"
 
 export default function AnalyticsPage() {
+  const store = useStore()
   const [monthly, setMonthly] = useState<MonthlySpending[]>([])
   const [byCategory, setByCategory] = useState<CategorySpending[]>([])
   const [statusDist, setStatusDist] = useState<{ status: string; count: number }[]>([])
@@ -31,25 +27,41 @@ export default function AnalyticsPage() {
   const [comparison, setComparison] = useState<MonthComparison[]>([])
   const [tags, setTags] = useState<string[]>([])
   const [selectedTag, setSelectedTag] = useState<string>("")
+  const [loading, setLoading] = useState(true)
+
+  const loadData = useCallback(async () => {
+    const [mo, bc, sd, od, ti, comp] = await Promise.all([
+      store.getMonthlySpending(selectedTag || undefined),
+      store.getSpendingByCategory(),
+      store.getStatusDistribution(),
+      store.getOwnershipDistribution(),
+      store.getTopExpensiveProducts(10),
+      store.getMonthOverMonthComparison(),
+    ])
+    setMonthly(mo)
+    setByCategory(bc)
+    setStatusDist(sd)
+    setOwnershipDist(od)
+    setTopItems(ti)
+    setComparison(comp)
+  }, [store, selectedTag])
 
   useEffect(() => {
-    setTags(getAllTags())
-    loadData()
-  }, [])
+    async function init() {
+      const allTags = await store.getAllTags()
+      setTags(allTags)
+      await loadData()
+      setLoading(false)
+    }
+    init()
+  }, [store, loadData])
 
   useEffect(() => {
-    loadData()
+    if (!loading) loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTag])
 
-  function loadData() {
-    setMonthly(getMonthlySpending(selectedTag || undefined))
-    setByCategory(getSpendingByCategory())
-    setStatusDist(getStatusDistribution())
-    setOwnershipDist(getOwnershipDistribution())
-    setTopItems(getTopExpensiveProducts(10))
-    setComparison(getMonthOverMonthComparison())
-  }
+  if (loading) return <LoadingSkeleton />
 
   const totalSpend = monthly.reduce((s, m) => s + m.amount, 0)
   const totalItems = statusDist.reduce((s, d) => s + d.count, 0)

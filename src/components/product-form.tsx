@@ -26,14 +26,8 @@ import { ImageUpload } from "./image-upload"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Product, ProductStatus, ProductCondition, ProductOwnership, Category, Subcategory } from "@/lib/types"
 import { STATUS_OPTIONS, CONDITION_OPTIONS, OWNERSHIP_OPTIONS, EXPENSE_TAGS } from "@/lib/constants"
-import {
-  getCategories,
-  getSubcategories,
-  addProduct,
-  updateProduct,
-  checkDuplicates,
-  DuplicateResult,
-} from "@/lib/store"
+import type { DuplicateResult } from "@/lib/store"
+import { useStore } from "@/hooks/use-store"
 
 interface ProductFormProps {
   product?: Product
@@ -42,6 +36,7 @@ interface ProductFormProps {
 
 export function ProductForm({ product, mode }: ProductFormProps) {
   const router = useRouter()
+  const store = useStore()
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
   const [filteredSubs, setFilteredSubs] = useState<Subcategory[]>([])
@@ -88,9 +83,16 @@ export function ProductForm({ product, mode }: ProductFormProps) {
   const [tagsInput, setTagsInput] = useState((product?.tags || []).join(", "))
 
   useEffect(() => {
-    setCategories(getCategories())
-    setSubcategories(getSubcategories())
-  }, [])
+    async function load() {
+      const [cats, subs] = await Promise.all([
+        store.getCategories(),
+        store.getSubcategories(),
+      ])
+      setCategories(cats)
+      setSubcategories(subs)
+    }
+    load()
+  }, [store])
 
   useEffect(() => {
     setFilteredSubs(subcategories.filter((s) => s.category_id === categoryId))
@@ -101,10 +103,10 @@ export function ProductForm({ product, mode }: ProductFormProps) {
 
   const [duplicateChecked, setDuplicateChecked] = useState(false)
 
-  const runDuplicateCheck = useCallback(() => {
+  const runDuplicateCheck = useCallback(async () => {
     if (duplicateChecked) return
     if (!name && !sku && !sourceUrl) return
-    const result = checkDuplicates({
+    const result = await store.checkDuplicates({
       name: name || undefined,
       brand: brand || undefined,
       sku: sku || undefined,
@@ -115,9 +117,9 @@ export function ProductForm({ product, mode }: ProductFormProps) {
       setDuplicates(result)
       setShowDuplicateDialog(true)
     }
-  }, [name, brand, sku, sourceUrl, product?.id, duplicateChecked])
+  }, [store, name, brand, sku, sourceUrl, product?.id, duplicateChecked])
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
     const tags = tagsInput
@@ -162,10 +164,10 @@ export function ProductForm({ product, mode }: ProductFormProps) {
     }
 
     if (mode === "create") {
-      const newProduct = addProduct(data)
+      const newProduct = await store.addProduct(data)
       router.push(`/products/${newProduct.id}`)
     } else if (product) {
-      updateProduct(product.id, data)
+      await store.updateProduct(product.id, data)
       router.push(`/products/${product.id}`)
     }
   }
