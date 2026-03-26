@@ -24,17 +24,10 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/charlesrogers/everything-you-own:latest
-            ghcr.io/charlesrogers/everything-you-own:${{ github.sha }}
+            ghcr.io/charlesrogers/everything-you-own-app:latest
+            ghcr.io/charlesrogers/everything-you-own-app:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Make package public
-        run: |
-          curl -sf -X PATCH \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/user/packages/container/everything-you-own" \
-            -d '{"visibility":"public"}' || true
       - name: Deploy
         run: |
           curl -sf -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
