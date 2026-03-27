@@ -328,7 +328,15 @@ export function RackVisualization({ rack, itemCounts, shelfItems, compact = fals
                         className="flex-1 h-full flex items-center justify-center text-[10px] text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-muted/30 rounded-sm transition-colors"
                         draggable={false}
                       >
-                        {compact ? "" : (count > 0 ? `${count} loose` : "empty")}
+                        {compact ? "" : (
+                          (row as Record<string, unknown>).isHint
+                            ? "back available"
+                            : row.looseCount > 0
+                              ? `${row.looseCount} loose`
+                              : count > 0
+                                ? `${count} loose`
+                                : "empty"
+                        )}
                       </Link>
                     )}
                   </div>

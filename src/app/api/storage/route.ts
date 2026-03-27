@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     const { data: contentData } = await sb
       .from('product_locations')
       .select(`
-        id, product_id, location_id, household_id, quantity, notes, added_at, added_by,
+        id, product_id, location_id, household_id, quantity, notes, depth_row, col_index, added_at, added_by,
         products (name, brand, image_url, price, is_consumable, consumable_quantity, consumable_unit, consumable_min_threshold)
       `)
       .eq('location_id', locationId)
