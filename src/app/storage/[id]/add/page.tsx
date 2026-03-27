@@ -27,7 +27,7 @@ export default function AddItemToLocationPage() {
   const [adding, setAdding] = useState<string | null>(null)
   const [justAdded, setJustAdded] = useState<Set<string>>(new Set())
   const [existingItemIds, setExistingItemIds] = useState<Set<string>>(new Set())
-  const [depthRow, setDepthRow] = useState<"front" | "back">("front")
+  const [depthRow, setDepthRow] = useState<"front" | "back" | "full">("front")
   const [colIndex, setColIndex] = useState<number | null>(null)
   const [binColumns, setBinColumns] = useState<{ widthIn: number; name: string }[]>([])
   const [shelfWidth, setShelfWidth] = useState<number>(36.25)
@@ -135,7 +135,7 @@ export default function AddItemToLocationPage() {
         <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] p-4 space-y-3">
           <h2 className="text-[13px] font-semibold">Shelf position</h2>
 
-          {/* Front/Back toggle */}
+          {/* Front/Back/Full toggle */}
           <div>
             <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Depth row</label>
             <div className="flex gap-2">
@@ -156,6 +156,15 @@ export default function AddItemToLocationPage() {
                 }`}
               >
                 Back
+              </button>
+              <button
+                type="button"
+                onClick={() => setDepthRow("full")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                  depthRow === "full" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                }`}
+              >
+                Full
               </button>
             </div>
           </div>

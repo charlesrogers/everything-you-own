@@ -101,6 +101,7 @@ interface AddSublocationFormProps {
   parentType: LocationType
   parentSubtype: UnitSubtype | null
   parentName?: string
+  parentDepthIn?: number | null
   existingChildCount: number
   onAdd: (input: CreateLocationInput) => Promise<string | void>
   onCancel: () => void
@@ -113,6 +114,7 @@ export function AddSublocationForm({
   parentType,
   parentSubtype,
   parentName,
+  parentDepthIn,
   existingChildCount,
   onAdd,
   onCancel,
@@ -133,7 +135,7 @@ export function AddSublocationForm({
   const [dimDepth, setDimDepth] = useState("")
   const [dimHeight, setDimHeight] = useState("")
   const [selectedBinTemplate, setSelectedBinTemplate] = useState<string | null>(null)
-  const [depthRow, setDepthRow] = useState<"front" | "back">("front")
+  const [depthRow, setDepthRow] = useState<"front" | "back" | "full">("front")
   const [quantity, setQuantity] = useState(1)
   const [saving, setSaving] = useState(false)
   const [lastCreatedId, setLastCreatedId] = useState<string | null>(null)
@@ -164,6 +166,12 @@ export function AddSublocationForm({
     setSelectedBinTemplate(binId)
     // Don't auto-fill name — let user type a descriptive name like "Holiday Decorations"
     setName("")
+    // Auto-select depth row based on bin depth vs shelf depth
+    const bin = SAMLA_BINS.find((b) => b.id === binId)
+    if (bin && parentDepthIn) {
+      // If bin depth fills ≥85% of shelf depth, it's full-depth
+      setDepthRow(bin.depthIn >= parentDepthIn * 0.85 ? "full" : "front")
+    }
   }
 
   const handleSave = async () => {
@@ -188,7 +196,7 @@ export function AddSublocationForm({
         depth_in: bin?.depthIn ?? (dimDepth ? parseFloat(dimDepth) : null),
         height_in: bin?.heightIn ?? (dimHeight ? parseFloat(dimHeight) : null),
         sort_order: currentCtx.childCount + i,
-        metadata: selectedSubtype === "bin" && depthRow === "back" ? { depth_row: "back" } : undefined,
+        metadata: selectedSubtype === "bin" && depthRow !== "front" ? { depth_row: depthRow } : undefined,
       })
       if (result) lastId = result
     }
@@ -424,7 +432,7 @@ export function AddSublocationForm({
           )}
         </div>
 
-        {/* Front/Back row — only for bins */}
+        {/* Front/Back/Full row — only for bins */}
         {isBin && (
           <div>
             <label className="text-[12px] font-medium text-muted-foreground mb-1.5 block">
@@ -449,9 +457,20 @@ export function AddSublocationForm({
               >
                 Back
               </button>
+              <button
+                type="button"
+                onClick={() => setDepthRow("full")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                  depthRow === "full" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                }`}
+              >
+                Full
+              </button>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1">
-              Half-depth bins can sit front-to-back on the same shelf
+              {depthRow === "full"
+                ? "Bin spans the full depth of the shelf"
+                : "Half-depth bins can sit front-to-back on the same shelf"}
             </p>
           </div>
         )}

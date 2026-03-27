@@ -138,8 +138,12 @@ export function RackVisualization({ rack, itemCounts, shelfItems, compact = fals
             .sort((a, b) => a.sort_order - b.sort_order)
 
           // Split into front/back rows based on metadata.depth_row
+          // 'full' depth bins go in front row (they span the entire shelf depth)
           const shelfDepth = shelf.depth_in ?? rackDims.depth ?? 14
-          const frontBins = allBins.filter((b) => (b.metadata as Record<string, unknown>)?.depth_row !== "back")
+          const frontBins = allBins.filter((b) => {
+            const dr = (b.metadata as Record<string, unknown>)?.depth_row
+            return dr !== "back"  // front, full, or unset all go in front row
+          })
           const backBins = allBins.filter((b) => (b.metadata as Record<string, unknown>)?.depth_row === "back")
           const hasBackRow = backBins.length > 0
 

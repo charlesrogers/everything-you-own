@@ -483,6 +483,7 @@ export default function LocationDetailPage() {
               parentType={location.location_type}
               parentSubtype={location.unit_subtype}
               parentName={location.name}
+              parentDepthIn={location.depth_in}
               existingChildCount={childLocations.length}
               onAdd={handleAddChild}
               onCancel={() => setShowAddChild(false)}
@@ -524,9 +525,10 @@ export default function LocationDetailPage() {
       {/* Items — only show on leaf-ish locations (shelves, bins, drawers) */}
       {(location.location_type === "compartment" || children.length === 0) && (() => {
         const isShelf = location.unit_subtype === "shelf"
-        const hasPositionedItems = isShelf && contents.some((c) => c.depth_row === "back" || c.col_index != null)
+        const hasPositionedItems = isShelf && contents.some((c) => c.depth_row === "back" || c.depth_row === "full" || c.col_index != null)
 
         // Group items by position for shelves
+        const fullItems = hasPositionedItems ? contents.filter((c) => c.depth_row === "full") : []
         const frontItems = hasPositionedItems ? contents.filter((c) => (c.depth_row ?? "front") === "front") : []
         const backItems = hasPositionedItems ? contents.filter((c) => c.depth_row === "back") : []
 
@@ -616,9 +618,19 @@ export default function LocationDetailPage() {
               </div>
             ) : hasPositionedItems ? (
               <div>
-                {frontItems.length > 0 && (
+                {fullItems.length > 0 && (
                   <div>
                     <div className="px-4 py-1.5 bg-secondary/40 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Full depth
+                    </div>
+                    <div className="divide-y">
+                      {fullItems.map(renderItem)}
+                    </div>
+                  </div>
+                )}
+                {frontItems.length > 0 && (
+                  <div>
+                    <div className="px-4 py-1.5 bg-secondary/40 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-t">
                       Front row
                     </div>
                     <div className="divide-y">
