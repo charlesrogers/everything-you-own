@@ -106,6 +106,7 @@ export function useStore() {
     const hid = householdId || ''
     const uid = user?.id || null
 
+
     return {
       getCategories: () => sbStore.getCategories(sb, hid),
       addCategory: (name: string) => sbStore.addCategory(sb, hid, name),
@@ -180,5 +181,6 @@ export function useStore() {
       getUsageLog: (productId: string, limit?: number) => wmsStore.getUsageLog(sb, productId, limit),
       getLowStockProducts: () => wmsStore.getLowStockProducts(sb, hid),
     }
-  }, [user, householdId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, householdId])
 }

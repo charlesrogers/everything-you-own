@@ -65,19 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const newUser = session?.user ?? null
         setUser(newUser)
 
-        if (newUser) {
-          const { data: membership } = await supabase
-            .from('household_members')
-            .select('household_id')
-            .eq('user_id', newUser.id)
-            .limit(1)
-            .single()
-
-          setHouseholdId(membership?.household_id ?? null)
-        } else if (_event === 'SIGNED_OUT') {
-          // Only clear householdId on explicit sign-out, not token refresh
+        if (!newUser && _event === 'SIGNED_OUT') {
           setHouseholdId(null)
         }
+        // Don't re-fetch householdId on token refresh — it doesn't change
+        // and the query can fail during the brief token transition window
       }
     )
 
