@@ -164,9 +164,13 @@ export function RackVisualization({ rack, itemCounts, compact = false, onReorder
           const frontColumns = packColumns(frontBins)
           const backColumns = packColumns(backBins)
           const frontUsedWidth = frontColumns.reduce((sum, col) => sum + col.widthIn, 0)
-          const frontRemainingPct = Math.max(0, ((rackWidth - frontUsedWidth) / rackWidth) * 100)
+          const frontOverflow = frontUsedWidth > rackWidth
+          const frontDenom = Math.max(rackWidth, frontUsedWidth)
+          const frontRemainingPct = frontOverflow ? 0 : ((rackWidth - frontUsedWidth) / rackWidth) * 100
           const backUsedWidth = backColumns.reduce((sum, col) => sum + col.widthIn, 0)
-          const backRemainingPct = Math.max(0, ((rackWidth - backUsedWidth) / rackWidth) * 100)
+          const backOverflow = backUsedWidth > rackWidth
+          const backDenom = Math.max(rackWidth, backUsedWidth)
+          const backRemainingPct = backOverflow ? 0 : ((rackWidth - backUsedWidth) / rackWidth) * 100
           const count = itemCounts[shelf.id] ?? 0
           const isDragOver = dragOverShelfId === shelf.id && dragShelfId !== shelf.id
 
@@ -199,12 +203,12 @@ export function RackVisualization({ rack, itemCounts, compact = false, onReorder
               <div className="flex-1 h-full flex flex-col p-px overflow-hidden">
                 {/* Render a row of bin columns */}
                 {[
-                  { label: "F", cols: frontColumns, bins: frontBins, remainPct: frontRemainingPct },
-                  ...(hasBackRow ? [{ label: "B", cols: backColumns, bins: backBins, remainPct: backRemainingPct }] : []),
+                  { label: "F", cols: frontColumns, bins: frontBins, remainPct: frontRemainingPct, denom: frontDenom, overflow: frontOverflow },
+                  ...(hasBackRow ? [{ label: "B", cols: backColumns, bins: backBins, remainPct: backRemainingPct, denom: backDenom, overflow: backOverflow }] : []),
                 ].map((row) => (
                   <div
                     key={row.label}
-                    className={`flex items-end gap-px flex-1 ${hasBackRow ? "border-b border-foreground/5 last:border-b-0" : ""}`}
+                    className={`flex items-end gap-px flex-1 ${hasBackRow ? "border-b border-foreground/5 last:border-b-0" : ""} ${row.overflow ? "ring-1 ring-inset ring-destructive/30 bg-destructive/5 rounded-sm" : ""}`}
                   >
                     {/* Row label (F/B) — only when back row exists */}
                     {hasBackRow && !compact && (
@@ -214,7 +218,7 @@ export function RackVisualization({ rack, itemCounts, compact = false, onReorder
                     )}
 
                     {row.cols.map((col, colIdx) => {
-                      const colWidthPct = (col.widthIn / rackWidth) * 100
+                      const colWidthPct = (col.widthIn / row.denom) * 100
 
                       return (
                         <div
