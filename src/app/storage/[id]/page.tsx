@@ -191,6 +191,10 @@ export default function LocationDetailPage() {
 
   const saveDetails = async () => {
     const bin = editBinTemplate ? SAMLA_OPTIONS.find((b) => b.id === editBinTemplate) : null
+    const existingMeta = (location!.metadata as Record<string, unknown>) ?? {}
+    const metadata = location!.unit_subtype === "bin"
+      ? { ...existingMeta, depth_row: editDepthRow === "front" ? undefined : editDepthRow }
+      : existingMeta
     await store.updateLocation(locationId, {
       name: editName.trim() || location!.name,
       label: editLabel.trim() || null,
@@ -198,6 +202,7 @@ export default function LocationDetailPage() {
       width_in: bin?.widthIn ?? (editWidth ? parseFloat(editWidth) : null),
       depth_in: bin?.depthIn ?? (editDepth ? parseFloat(editDepth) : null),
       height_in: bin?.heightIn ?? (editHeight ? parseFloat(editHeight) : null),
+      metadata,
     })
     setEditingDetails(false)
     await loadData()
@@ -307,6 +312,27 @@ export default function LocationDetailPage() {
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Depth row — only for bins */}
+              {location.unit_subtype === "bin" && (
+                <div>
+                  <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Shelf position</label>
+                  <div className="flex gap-2">
+                    {(["front", "back", "full"] as const).map((dr) => (
+                      <button
+                        key={dr}
+                        type="button"
+                        onClick={() => setEditDepthRow(dr)}
+                        className={`flex-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                          editDepthRow === dr ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                        }`}
+                      >
+                        {dr.charAt(0).toUpperCase() + dr.slice(1)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
