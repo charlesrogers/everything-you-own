@@ -54,26 +54,26 @@ export default function LocationDetailPage() {
   const loadData = useCallback(async () => {
     if (authLoading) return
     try {
-      // Fetch all locations + contents + counts in parallel (3 queries, not 5)
-      const [allLocs, items, counts] = await Promise.all([
-        store.getLocations(),
-        store.getLocationContents(locationId),
-        store.getItemCountsByLocation(),
-      ])
+      // Single API call to colocated server — all data in one round trip
+      const res = await fetch(`/api/storage?id=${locationId}`)
+      const data = await res.json()
+      const allLocs = data.locations ?? []
+      const items = data.contents ?? []
+      const counts = data.itemCounts ?? {}
 
-      const loc = allLocs.find((l) => l.id === locationId)
+      const loc = allLocs.find((l: Location) => l.id === locationId)
       if (!loc) {
         router.push("/storage")
         return
       }
 
-      // Build breadcrumbs from the already-fetched locations (zero extra queries)
-      const locMap = new Map(allLocs.map((l) => [l.id, l]))
+      // Build breadcrumbs from the already-fetched locations
+      const locMap = new Map(allLocs.map((l: Location) => [l.id, l]))
       const crumbs: LocationBreadcrumb[] = []
-      let cur: typeof loc | undefined = loc
+      let cur: Location | undefined = loc
       for (let i = 0; i < 10 && cur; i++) {
         crumbs.unshift({ id: cur.id, name: cur.name, location_type: cur.location_type, label: cur.label })
-        cur = cur.parent_id ? locMap.get(cur.parent_id) : undefined
+        cur = cur.parent_id ? (locMap.get(cur.parent_id) as Location | undefined) : undefined
       }
 
       setLocation(loc)
@@ -81,7 +81,7 @@ export default function LocationDetailPage() {
       setContents(items)
       setItemCounts(counts)
 
-      const kids = allLocs.filter((l) => l.parent_id === locationId)
+      const kids = allLocs.filter((l: Location) => l.parent_id === locationId)
       setChildLocations(kids)
       const allDescendants = getAllDescendants(locationId, allLocs)
       setChildren(buildLocationTree(allDescendants))

@@ -19,18 +19,20 @@ export default function StoragePage() {
 
   useEffect(() => {
     if (authLoading) return
-    Promise.all([
-      store.getLocations(),
-      store.getItemCountsByLocation(),
-    ]).then(([locs, counts]) => {
-      setLocations(locs)
-      setTree(buildLocationTree(locs))
-      setItemCounts(counts)
-    }).catch((err) => {
-      console.error("Failed to load storage:", err)
-    }).finally(() => {
-      setLoading(false)
-    })
+    // Single API call to colocated server (fast) instead of 3 browser→Supabase calls (slow)
+    fetch("/api/storage")
+      .then((r) => r.json())
+      .then((data) => {
+        setLocations(data.locations ?? [])
+        setTree(buildLocationTree(data.locations ?? []))
+        setItemCounts(data.itemCounts ?? {})
+      })
+      .catch((err) => {
+        console.error("Failed to load storage:", err)
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [authLoading, householdId])
 
   const handleDelete = async (id: string) => {

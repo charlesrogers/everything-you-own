@@ -1,0 +1,97 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+/**
+ * Server-side API that bundles all storage data in one call.
+ * The server is colocated with Supabase so queries are sub-ms.
+ * Browser makes ONE request here instead of 3+ to Supabase directly.
+ *
+ * GET /api/storage — all locations + item counts
+ * GET /api/storage?id=xxx — specific location + breadcrumbs + contents + children
+ */
+export async function GET(request: NextRequest) {
+  const sb = await createClient()
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Get household
+  const { data: membership } = await sb
+    .from('household_members')
+    .select('household_id')
+    .eq('user_id', user.id)
+    .limit(1)
+    .single()
+
+  if (!membership) {
+    return NextResponse.json({ error: 'No household' }, { status: 403 })
+  }
+
+  const hid = membership.household_id
+  const locationId = request.nextUrl.searchParams.get('id')
+
+  // Fetch all locations (always needed for tree + breadcrumbs)
+  const { data: locations, error: locErr } = await sb
+    .from('locations')
+    .select('*')
+    .eq('household_id', hid)
+    .eq('is_archived', false)
+    .order('sort_order')
+
+  if (locErr) {
+    return NextResponse.json({ error: locErr.message }, { status: 500 })
+  }
+
+  // Fetch all product_location counts
+  const { data: plData } = await sb
+    .from('product_locations')
+    .select('location_id')
+    .eq('household_id', hid)
+
+  const itemCounts: Record<string, number> = {}
+  for (const row of plData ?? []) {
+    itemCounts[row.location_id] = (itemCounts[row.location_id] || 0) + 1
+  }
+
+  // If a specific location is requested, also fetch its contents
+  let contents = null
+  if (locationId) {
+    const { data: contentData } = await sb
+      .from('product_locations')
+      .select(`
+        id, product_id, location_id, household_id, quantity, notes, added_at, added_by,
+        products (name, brand, image_url, price, is_consumable, consumable_quantity, consumable_unit, consumable_min_threshold)
+      `)
+      .eq('location_id', locationId)
+      .order('added_at', { ascending: false })
+
+    contents = (contentData ?? []).map((row) => {
+      const product = (row as Record<string, unknown>).products as Record<string, unknown> | null
+      return {
+        id: row.id,
+        product_id: row.product_id,
+        location_id: row.location_id,
+        household_id: row.household_id,
+        quantity: row.quantity,
+        notes: row.notes,
+        added_at: row.added_at,
+        added_by: row.added_by,
+        product_name: product?.name ?? 'Unknown',
+        product_brand: product?.brand ?? null,
+        product_image_url: product?.image_url ?? null,
+        product_price: product?.price != null ? Number(product.price) : null,
+        is_consumable: product?.is_consumable ?? false,
+        consumable_quantity: product?.consumable_quantity != null ? Number(product.consumable_quantity) : null,
+        consumable_unit: product?.consumable_unit ?? null,
+        consumable_min_threshold: product?.consumable_min_threshold != null ? Number(product.consumable_min_threshold) : null,
+      }
+    })
+  }
+
+  return NextResponse.json({
+    locations: locations ?? [],
+    itemCounts,
+    contents,
+  })
+}
