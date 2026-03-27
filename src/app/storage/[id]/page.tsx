@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ChevronRight, Plus, Trash2, Package, Nfc, Trash, Pencil, Check, X, ChevronDown } from "lucide-react"
+import { ChevronRight, Plus, Trash2, Package, Nfc, Trash, Pencil, Check, X, ChevronDown, Copy, ClipboardCheck } from "lucide-react"
 import { SAMLA_BINS } from "@/lib/wms-constants"
 
 const SAMLA_OPTIONS = SAMLA_BINS.map((bin) => ({
@@ -55,6 +55,7 @@ export default function LocationDetailPage() {
   const [showAddChild, setShowAddChild] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [editingDetails, setEditingDetails] = useState(false)
+  const [copiedNfc, setCopiedNfc] = useState(false)
   const [editName, setEditName] = useState("")
   const [editLabel, setEditLabel] = useState("")
   const [editWidth, setEditWidth] = useState("")
@@ -371,14 +372,30 @@ export default function LocationDetailPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {location.nfc_tag_id && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary px-2 py-1 rounded-full">
-              <Nfc className="size-3" />
-              NFC
-            </span>
-          )}
           {location.short_id && (
-            <span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-1 rounded">{location.short_id}</span>
+            <button
+              onClick={() => {
+                const url = `https://stuff.imprevista.com/s/${location.short_id}`
+                navigator.clipboard.writeText(url)
+                setCopiedNfc(true)
+                setTimeout(() => setCopiedNfc(false), 2000)
+              }}
+              className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${
+                copiedNfc
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600"
+                  : "bg-secondary border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+              }`}
+              title="Copy NFC URL for NFC Tools app"
+            >
+              {copiedNfc ? <ClipboardCheck className="size-3" /> : <Copy className="size-3" />}
+              {copiedNfc ? "Copied!" : "Copy NFC URL"}
+            </button>
+          )}
+          {location.nfc_tag_id && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-emerald-500/10 text-emerald-600 px-2 py-1 rounded-full">
+              <Nfc className="size-3" />
+              Tagged
+            </span>
           )}
           {confirmDelete === locationId ? (
             <div className="flex items-center gap-1.5">
