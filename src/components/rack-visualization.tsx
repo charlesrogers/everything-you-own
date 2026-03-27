@@ -136,10 +136,25 @@ export function RackVisualization({ rack, itemCounts, compact = false, onReorder
             .filter((c) => c.unit_subtype === "bin" || c.location_type === "compartment")
             .sort((a, b) => a.sort_order - b.sort_order)
 
-          const usedWidth = bins.reduce((sum, bin) => {
-            const binDims = getEffectiveDimensions(bin)
-            return sum + (binDims.width ?? 0)
-          }, 0)
+          // Pack bins into columns that can stack vertically
+          type BinColumn = { bins: LocationTreeNode[]; widthIn: number; totalHeightIn: number }
+          const columns: BinColumn[] = []
+          for (const bin of bins) {
+            const bd = getEffectiveDimensions(bin)
+            const bw = bd.width ?? 10
+            const bh = bd.height ?? shelfH
+
+            // Try to stack on the last column if same width and fits
+            const lastCol = columns[columns.length - 1]
+            if (lastCol && Math.abs(lastCol.widthIn - bw) < 1 && lastCol.totalHeightIn + bh <= shelfH + 0.5) {
+              lastCol.bins.push(bin)
+              lastCol.totalHeightIn += bh
+            } else {
+              columns.push({ bins: [bin], widthIn: bw, totalHeightIn: bh })
+            }
+          }
+
+          const usedWidth = columns.reduce((sum, col) => sum + col.widthIn, 0)
           const remainingPct = Math.max(0, ((rackWidth - usedWidth) / rackWidth) * 100)
           const count = itemCounts[shelf.id] ?? 0
           const isDragOver = dragOverShelfId === shelf.id && dragShelfId !== shelf.id
@@ -169,56 +184,69 @@ export function RackVisualization({ rack, itemCounts, compact = false, onReorder
                 </Link>
               )}
 
-              {/* Bin area */}
+              {/* Bin area — columns that can stack bins vertically */}
               <div className="flex-1 h-full flex items-end gap-px p-px overflow-hidden">
-                {bins.map((bin) => {
-                  const binDims = getEffectiveDimensions(bin)
-                  const binWidthPct = binDims.width ? (binDims.width / rackWidth) * 100 : 30
-                  const binHeightPct = binDims.height && shelfH ? Math.min(100, (binDims.height / shelfH) * 100) : 100
-                  const binItems = itemCounts[bin.id] ?? 0
-                  const hasBinItems = binItems > 0
-                  const isBinDragOver = dragOverBinId === bin.id && dragBinId !== bin.id
+                {columns.map((col, colIdx) => {
+                  const colWidthPct = (col.widthIn / rackWidth) * 100
 
                   return (
                     <div
-                      key={bin.id}
-                      className={`relative rounded-sm border transition-colors ${
-                        hasBinItems
-                          ? "bg-primary/12 border-primary/25 hover:bg-primary/20"
-                          : "bg-muted/40 border-dashed border-muted-foreground/20 hover:bg-muted/60"
-                      } ${isBinDragOver ? "ring-2 ring-primary/50" : ""} ${dragBinId === bin.id ? "opacity-50" : ""}`}
+                      key={`col-${colIdx}`}
+                      className="flex flex-col-reverse gap-px"
                       style={{
-                        width: `${binWidthPct}%`,
+                        width: `${colWidthPct}%`,
                         minWidth: `${MIN_BIN_WIDTH}px`,
-                        height: `${binHeightPct}%`,
-                        minHeight: "20px",
-                        cursor: canDragBins ? "grab" : undefined,
+                        height: "100%",
                       }}
-                      title={`${bin.name}${binItems > 0 ? ` (${binItems} items)` : " (empty)"}`}
-                      draggable={canDragBins}
-                      onDragStart={(e) => { e.stopPropagation(); canDragBins && handleBinDragStart(shelf.id, bin.id) }}
-                      onDragOver={(e) => { e.stopPropagation(); canDragBins && handleBinDragOver(e, bin.id) }}
-                      onDrop={(e) => { e.stopPropagation(); canDragBins && handleBinDrop(shelf.id, bins) }}
-                      onDragEnd={() => { setDragBinId(null); setDragOverBinId(null); setDragBinShelfId(null) }}
                     >
-                      <Link
-                        href={`/storage/${bin.id}`}
-                        draggable={false}
-                        className={`absolute inset-0 flex items-center justify-center ${compact ? "text-[8px]" : "text-[9px]"} leading-tight text-center px-0.5 ${
-                          hasBinItems ? "text-primary font-medium" : "text-muted-foreground/50"
-                        }`}
-                      >
-                        {compact ? (
-                          binItems > 0 ? binItems : ""
-                        ) : (
-                          <span className="truncate block">
-                            {bin.name.length > 12 ? bin.name.slice(0, 10) + "\u2026" : bin.name}
-                            {binItems > 0 && (
-                              <span className="block text-[8px] opacity-70">{binItems} items</span>
-                            )}
-                          </span>
-                        )}
-                      </Link>
+                      {col.bins.map((bin) => {
+                        const binDims = getEffectiveDimensions(bin)
+                        const binHeightPct = binDims.height && shelfH ? Math.min(100, (binDims.height / shelfH) * 100) : (100 / col.bins.length)
+                        const binItems = itemCounts[bin.id] ?? 0
+                        const hasBinItems = binItems > 0
+                        const isBinDragOver = dragOverBinId === bin.id && dragBinId !== bin.id
+
+                        return (
+                          <div
+                            key={bin.id}
+                            className={`relative rounded-sm border transition-colors ${
+                              hasBinItems
+                                ? "bg-primary/12 border-primary/25 hover:bg-primary/20"
+                                : "bg-muted/40 border-dashed border-muted-foreground/20 hover:bg-muted/60"
+                            } ${isBinDragOver ? "ring-2 ring-primary/50" : ""} ${dragBinId === bin.id ? "opacity-50" : ""}`}
+                            style={{
+                              height: `${binHeightPct}%`,
+                              minHeight: "18px",
+                              cursor: canDragBins ? "grab" : undefined,
+                            }}
+                            title={`${bin.name}${binItems > 0 ? ` (${binItems} items)` : " (empty)"}`}
+                            draggable={canDragBins}
+                            onDragStart={(e) => { e.stopPropagation(); canDragBins && handleBinDragStart(shelf.id, bin.id) }}
+                            onDragOver={(e) => { e.stopPropagation(); canDragBins && handleBinDragOver(e, bin.id) }}
+                            onDrop={(e) => { e.stopPropagation(); canDragBins && handleBinDrop(shelf.id, bins) }}
+                            onDragEnd={() => { setDragBinId(null); setDragOverBinId(null); setDragBinShelfId(null) }}
+                          >
+                            <Link
+                              href={`/storage/${bin.id}`}
+                              draggable={false}
+                              className={`absolute inset-0 flex items-center justify-center ${compact ? "text-[8px]" : "text-[9px]"} leading-tight text-center px-0.5 ${
+                                hasBinItems ? "text-primary font-medium" : "text-muted-foreground/50"
+                              }`}
+                            >
+                              {compact ? (
+                                binItems > 0 ? binItems : ""
+                              ) : (
+                                <span className="truncate block">
+                                  {bin.name.length > 12 ? bin.name.slice(0, 10) + "\u2026" : bin.name}
+                                  {binItems > 0 && (
+                                    <span className="block text-[8px] opacity-70">{binItems} items</span>
+                                  )}
+                                </span>
+                              )}
+                            </Link>
+                          </div>
+                        )
+                      })}
                     </div>
                   )
                 })}
