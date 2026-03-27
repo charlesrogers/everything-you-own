@@ -5,7 +5,8 @@ import Link from "next/link"
 import { Plus, Warehouse, Settings2, Package, Minus, Nfc, Copy, ClipboardCheck, Inbox, ChevronDown, ChevronRight, Trash2 } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { useStore } from "@/hooks/use-store"
-import type { Location, LocationTreeNode } from "@/lib/wms-types"
+import type { Location, LocationTreeNode, CreateLocationInput } from "@/lib/wms-types"
+import { SAMLA_BINS } from "@/lib/wms-constants"
 import { buildLocationTree } from "@/lib/wms-local-store"
 import { LocationTree } from "@/components/location-tree"
 
@@ -24,6 +25,12 @@ export default function StoragePage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedItems, setExpandedItems] = useState<Record<string, unknown>[]>([])
   const [loadingItems, setLoadingItems] = useState(false)
+  // Add bin inline form
+  const [showAddBin, setShowAddBin] = useState(false)
+  const [addBinShelfId, setAddBinShelfId] = useState("")
+  const [addBinName, setAddBinName] = useState("")
+  const [addBinTemplate, setAddBinTemplate] = useState("")
+  const [addingBin, setAddingBin] = useState(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -47,6 +54,37 @@ export default function StoragePage() {
     setLocations(locs)
     setTree(buildLocationTree(locs))
     setItemCounts(counts)
+  }
+
+  async function reloadData() {
+    const res = await fetch("/api/storage")
+    const data = await res.json()
+    setLocations(data.locations ?? [])
+    setTree(buildLocationTree(data.locations ?? []))
+    setItemCounts(data.itemCounts ?? {})
+  }
+
+  async function handleAddBin(shelfId?: string) {
+    const parentId = shelfId || addBinShelfId
+    if (!parentId || !addBinName.trim()) return
+    setAddingBin(true)
+    const template = SAMLA_BINS.find((b) => b.id === addBinTemplate)
+    await store.createLocation({
+      parent_id: parentId,
+      location_type: "compartment",
+      unit_subtype: "bin",
+      name: addBinName.trim(),
+      template_id: addBinTemplate || null,
+      width_in: template?.widthIn ?? null,
+      depth_in: template?.depthIn ?? null,
+      height_in: template?.heightIn ?? null,
+    })
+    setAddBinName("")
+    setAddBinTemplate("")
+    setAddBinShelfId("")
+    setShowAddBin(false)
+    setAddingBin(false)
+    await reloadData()
   }
 
   // Build location map for parent paths
@@ -212,10 +250,69 @@ export default function StoragePage() {
 
           {/* All Bins tab */}
           {tab === "bins" && (
+            <div className="space-y-3">
+              {/* Add bin inline form */}
+              {showAddBin ? (
+                <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] p-4 space-y-3">
+                  <div className="text-[13px] font-semibold">Add Bin</div>
+                  <select
+                    value={addBinShelfId}
+                    onChange={(e) => setAddBinShelfId(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-[13px]"
+                  >
+                    <option value="">Select a shelf...</option>
+                    {shelves.map((s) => (
+                      <option key={s.id} value={s.id}>{getParentPath(s)} \u203a {s.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={addBinTemplate}
+                    onChange={(e) => setAddBinTemplate(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-[13px]"
+                  >
+                    <option value="">Bin type (optional)</option>
+                    {SAMLA_BINS.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name} ({b.widthIn}&quot; &times; {b.depthIn}&quot; &times; {b.heightIn}&quot;)</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={addBinName}
+                    onChange={(e) => setAddBinName(e.target.value)}
+                    placeholder="Bin name (e.g., Holiday Decorations)"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-[13px]"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleAddBin()}
+                      disabled={!addBinShelfId || !addBinName.trim() || addingBin}
+                      className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      <Plus className="size-3" />
+                      {addingBin ? "Adding..." : "Add Bin"}
+                    </button>
+                    <button
+                      onClick={() => setShowAddBin(false)}
+                      className="rounded-lg border px-3 py-1.5 text-[12px] font-medium hover:bg-accent"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowAddBin(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium text-foreground hover:bg-accent transition-colors"
+                >
+                  <Plus className="size-3.5" />
+                  Add Bin
+                </button>
+              )}
+
             <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
               {bins.length === 0 ? (
                 <div className="p-8 text-center text-[13px] text-muted-foreground">
-                  No bins yet. Add bins to your shelves first.
+                  No bins yet. Click &quot;Add Bin&quot; above to create one.
                 </div>
               ) : bins.map((bin) => {
                 const isExpanded = expandedId === bin.id
@@ -270,6 +367,7 @@ export default function StoragePage() {
                 )
               })}
             </div>
+            </div>
           )}
 
           {/* All Shelves tab */}
@@ -314,14 +412,10 @@ export default function StoragePage() {
                     </div>
                     {isExpanded && (
                       <div className="bg-accent/20 border-t">
-                        {shelfBins.length === 0 ? (
-                          <div className="px-4 py-2 text-[12px] text-muted-foreground">
-                            No bins — <Link href={`/storage/${shelf.id}`} className="text-primary">add bins</Link>
-                          </div>
-                        ) : shelfBins.map((bin) => {
+                        {shelfBins.map((bin) => {
                           const binItems = itemCounts[bin.id] ?? 0
                           return (
-                            <div key={bin.id} className="flex items-center gap-2 px-4 py-2 border-b border-accent/30 last:border-b-0">
+                            <div key={bin.id} className="flex items-center gap-2 px-4 py-2 border-b border-accent/30">
                               <Package className="size-3 text-muted-foreground shrink-0" />
                               <Link href={`/storage/${bin.id}`} className="text-[12px] font-medium flex-1 truncate hover:text-primary">
                                 {bin.name}
@@ -339,6 +433,50 @@ export default function StoragePage() {
                             </div>
                           )
                         })}
+                        {/* Quick add bin row */}
+                        {addBinShelfId === shelf.id ? (
+                          <div className="flex items-center gap-2 px-4 py-2">
+                            <select
+                              value={addBinTemplate}
+                              onChange={(e) => setAddBinTemplate(e.target.value)}
+                              className="rounded border bg-background px-2 py-1 text-[11px] w-28"
+                            >
+                              <option value="">Type</option>
+                              {SAMLA_BINS.map((b) => (
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              value={addBinName}
+                              onChange={(e) => setAddBinName(e.target.value)}
+                              placeholder="Bin name..."
+                              className="flex-1 rounded border bg-background px-2 py-1 text-[12px]"
+                              autoFocus
+                              onKeyDown={(e) => e.key === "Enter" && handleAddBin(shelf.id)}
+                            />
+                            <button
+                              onClick={() => handleAddBin(shelf.id)}
+                              disabled={!addBinName.trim() || addingBin}
+                              className="rounded bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-50"
+                            >
+                              {addingBin ? "..." : "Add"}
+                            </button>
+                            <button
+                              onClick={() => { setAddBinShelfId(""); setAddBinName(""); setAddBinTemplate("") }}
+                              className="text-[11px] text-muted-foreground"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setAddBinShelfId(shelf.id)}
+                            className="flex items-center gap-1 px-4 py-2 text-[11px] text-primary font-medium hover:bg-accent/30 w-full"
+                          >
+                            <Plus className="size-3" /> Add bin to {shelf.name}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

@@ -206,6 +206,8 @@ export async function getLocationContents(
       household_id: row.household_id,
       quantity: row.quantity,
       notes: row.notes,
+      depth_row: (row as Record<string, unknown>).depth_row as 'front' | 'back' | null ?? null,
+      col_index: (row as Record<string, unknown>).col_index as number | null ?? null,
       added_at: row.added_at,
       added_by: row.added_by,
       product_name: product?.name as string ?? 'Unknown',
@@ -227,7 +229,7 @@ export async function getProductLocations(
   const { data, error } = await sb
     .from('product_locations')
     .select(`
-      id, product_id, location_id, household_id, quantity, notes, added_at, added_by,
+      id, product_id, location_id, household_id, quantity, notes, added_at, added_by, depth_row, col_index,
       locations (name, label)
     `)
     .eq('product_id', productId)
@@ -242,6 +244,8 @@ export async function getProductLocations(
       household_id: row.household_id,
       quantity: row.quantity,
       notes: row.notes,
+      depth_row: (row as Record<string, unknown>).depth_row as 'front' | 'back' | null ?? null,
+      col_index: (row as Record<string, unknown>).col_index as number | null ?? null,
       added_at: row.added_at,
       added_by: row.added_by,
       location_name: (loc?.name as string) ?? 'Unknown',
@@ -265,6 +269,8 @@ export async function addProductToLocation(
         household_id: householdId,
         quantity: input.quantity ?? 1,
         notes: input.notes ?? null,
+        depth_row: input.depth_row ?? 'front',
+        col_index: input.col_index ?? null,
         added_by: userId,
       },
       { onConflict: 'product_id,location_id' },

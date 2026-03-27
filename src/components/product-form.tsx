@@ -208,13 +208,13 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
             addAnotherRef.current = false
             return
           }
-          router.push(`/storage/${assignToLocationId}`)
+          window.location.href = `/storage/${assignToLocationId}`
         } else {
-          router.push(`/products/${newProduct.id}`)
+          window.location.href = `/products/${newProduct.id}`
         }
       } else if (product) {
         await store.updateProduct(product.id, data)
-        router.push(`/products/${product.id}`)
+        window.location.href = `/products/${product.id}`
       }
     } catch (err) {
       console.error("Failed to save product:", err)

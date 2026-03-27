@@ -2,19 +2,20 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { GripVertical, GripHorizontal } from "lucide-react"
+import { GripVertical, GripHorizontal, Package } from "lucide-react"
 import type { LocationTreeNode } from "@/lib/wms-types"
 import { getEffectiveDimensions, getShelfHeight } from "@/lib/wms-dimensions"
 
 interface RackVisualizationProps {
   rack: LocationTreeNode
   itemCounts: Record<string, number>
+  shelfItems?: Record<string, { front: Record<string, number>; back: Record<string, number> }>
   compact?: boolean
   onReorderShelves?: (shelfIds: string[]) => void
   onReorderBins?: (shelfId: string, binIds: string[]) => void
 }
 
-export function RackVisualization({ rack, itemCounts, compact = false, onReorderShelves, onReorderBins }: RackVisualizationProps) {
+export function RackVisualization({ rack, itemCounts, shelfItems, compact = false, onReorderShelves, onReorderBins }: RackVisualizationProps) {
   const rackDims = getEffectiveDimensions(rack)
   const rackWidth = rackDims.width ?? 36.25
 
@@ -202,16 +203,26 @@ export function RackVisualization({ rack, itemCounts, compact = false, onReorder
               {/* Bin area — front/back rows, each with columns that can stack */}
               <div className="flex-1 h-full flex flex-col p-px overflow-hidden">
                 {/* Render a row of bin columns */}
-                {[
-                  { label: "F", cols: frontColumns, bins: frontBins, remainPct: frontRemainingPct, denom: frontDenom, overflow: frontOverflow },
-                  ...(hasBackRow ? [{ label: "B", cols: backColumns, bins: backBins, remainPct: backRemainingPct, denom: backDenom, overflow: backOverflow }] : []),
-                ].map((row) => (
+                {/* Shelf loose items from shelfItems prop */}
+                {(() => {
+                  const si = shelfItems?.[shelf.id]
+                  const frontLoose = si ? Object.values(si.front).reduce((s, n) => s + n, 0) : 0
+                  const backLoose = si ? Object.values(si.back).reduce((s, n) => s + n, 0) : 0
+                  const shelfDepthIn = shelf.depth_in ?? rackDims.depth ?? 14
+                  const showBackHint = !hasBackRow && backLoose === 0 && shelfDepthIn >= 20 && frontBins.length > 0
+
+                  return [
+                    { label: "F", cols: frontColumns, bins: frontBins, remainPct: frontRemainingPct, denom: frontDenom, overflow: frontOverflow, looseCount: frontLoose, looseByCol: si?.front },
+                    ...(hasBackRow || backLoose > 0 ? [{ label: "B", cols: backColumns, bins: backBins, remainPct: backRemainingPct, denom: backDenom, overflow: backOverflow, looseCount: backLoose, looseByCol: si?.back }] : []),
+                    ...(showBackHint ? [{ label: "B", cols: [] as typeof frontColumns, bins: [] as typeof frontBins, remainPct: 100, denom: rackWidth, overflow: false, looseCount: 0, looseByCol: undefined, isHint: true }] : []),
+                  ]
+                })().map((row) => (
                   <div
-                    key={row.label}
-                    className={`flex items-end gap-px flex-1 ${hasBackRow ? "border-b border-foreground/5 last:border-b-0" : ""} ${row.overflow ? "ring-1 ring-inset ring-destructive/30 bg-destructive/5 rounded-sm" : ""}`}
+                    key={row.label + ((row as Record<string, unknown>).isHint ? '-hint' : '')}
+                    className={`flex items-end gap-px flex-1 ${hasBackRow || (row as Record<string, unknown>).looseCount ? "border-b border-foreground/5 last:border-b-0" : ""} ${row.overflow ? "ring-1 ring-inset ring-destructive/30 bg-destructive/5 rounded-sm" : ""} ${(row as Record<string, unknown>).isHint ? "opacity-40" : ""}`}
                   >
-                    {/* Row label (F/B) — only when back row exists */}
-                    {hasBackRow && !compact && (
+                    {/* Row label (F/B) — when multiple rows exist */}
+                    {(hasBackRow || row.bins.length === 0) && !compact && (
                       <span className="w-4 shrink-0 flex items-center justify-center text-[8px] text-muted-foreground/40 font-mono">
                         {row.label}
                       </span>
@@ -219,17 +230,30 @@ export function RackVisualization({ rack, itemCounts, compact = false, onReorder
 
                     {row.cols.map((col, colIdx) => {
                       const colWidthPct = (col.widthIn / row.denom) * 100
+                      const looseInCol = row.looseByCol?.[String(colIdx)] ?? 0
 
                       return (
                         <div
                           key={`col-${row.label}-${colIdx}`}
-                          className="flex flex-col-reverse gap-px"
+                          className="relative flex flex-col-reverse gap-px"
                           style={{
                             width: `${colWidthPct}%`,
                             minWidth: `${MIN_BIN_WIDTH}px`,
                             height: "100%",
                           }}
                         >
+                          {/* Loose item badge for this column */}
+                          {looseInCol > 0 && !compact && (
+                            <Link
+                              href={`/storage/${shelf.id}`}
+                              draggable={false}
+                              className="absolute -top-0.5 right-0 z-10 inline-flex items-center gap-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[7px] font-medium px-1 py-0.5 rounded-full border border-amber-500/20"
+                              title={`${looseInCol} loose item${looseInCol > 1 ? "s" : ""} in this column`}
+                            >
+                              <Package className="size-2" />
+                              {looseInCol}
+                            </Link>
+                          )}
                           {col.bins.map((bin) => {
                             const binDims = getEffectiveDimensions(bin)
                             const rowShelfH = hasBackRow ? shelfH : shelfH
@@ -286,9 +310,15 @@ export function RackVisualization({ rack, itemCounts, compact = false, onReorder
                     {/* Empty space in this row */}
                     {row.remainPct > 5 && (
                       <div
-                        className="h-full rounded-sm border border-dashed border-muted-foreground/10 bg-muted/20"
+                        className="h-full rounded-sm border border-dashed border-muted-foreground/10 bg-muted/20 flex items-center justify-center"
                         style={{ width: `${row.remainPct}%`, minWidth: "8px" }}
-                      />
+                      >
+                        {!compact && row.remainPct > 20 && (
+                          <span className="text-[8px] text-muted-foreground/40 font-mono">
+                            ~{Math.round((row.remainPct / 100) * rackWidth)}&quot;
+                          </span>
+                        )}
+                      </div>
                     )}
 
                     {/* Completely empty row */}

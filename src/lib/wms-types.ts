@@ -63,6 +63,8 @@ export interface ProductLocation {
   household_id: string
   quantity: number
   notes: string | null
+  depth_row: 'front' | 'back' | null
+  col_index: number | null
   added_at: string
   added_by: string | null
 }
@@ -131,6 +133,8 @@ export interface AddProductToLocationInput {
   location_id: string
   quantity?: number
   notes?: string | null
+  depth_row?: 'front' | 'back'
+  col_index?: number | null
 }
 
 export interface LogUsageInput {

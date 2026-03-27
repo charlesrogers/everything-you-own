@@ -253,6 +253,8 @@ export function addProductToLocation(input: AddProductToLocationInput): ProductL
   if (existing) {
     existing.quantity = input.quantity ?? existing.quantity
     existing.notes = input.notes ?? existing.notes
+    existing.depth_row = input.depth_row ?? existing.depth_row
+    existing.col_index = input.col_index ?? existing.col_index
     set(KEYS.productLocations, pls)
     return existing
   }
@@ -264,6 +266,8 @@ export function addProductToLocation(input: AddProductToLocationInput): ProductL
     household_id: 'local',
     quantity: input.quantity ?? 1,
     notes: input.notes ?? null,
+    depth_row: input.depth_row ?? 'front',
+    col_index: input.col_index ?? null,
     added_at: new Date().toISOString(),
     added_by: null,
   }

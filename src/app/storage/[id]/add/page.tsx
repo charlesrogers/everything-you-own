@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ChevronRight, Package, Plus, Search, Check, MapPin } from "lucide-react"
+import { ArrowLeft, ChevronRight, Package, Plus, Search, Check } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { useStore } from "@/hooks/use-store"
 import type { Location, LocationBreadcrumb } from "@/lib/wms-types"
 import type { Product } from "@/lib/types"
+import { getEffectiveDimensions } from "@/lib/wms-dimensions"
+import { buildLocationTree } from "@/lib/wms-local-store"
 
 export default function AddItemToLocationPage() {
   const params = useParams()
@@ -25,6 +27,10 @@ export default function AddItemToLocationPage() {
   const [adding, setAdding] = useState<string | null>(null)
   const [justAdded, setJustAdded] = useState<Set<string>>(new Set())
   const [existingItemIds, setExistingItemIds] = useState<Set<string>>(new Set())
+  const [depthRow, setDepthRow] = useState<"front" | "back">("front")
+  const [colIndex, setColIndex] = useState<number | null>(null)
+  const [binColumns, setBinColumns] = useState<{ widthIn: number; name: string }[]>([])
+  const [shelfWidth, setShelfWidth] = useState<number>(36.25)
 
   useEffect(() => {
     if (authLoading) return
@@ -42,6 +48,21 @@ export default function AddItemToLocationPage() {
       // Track which products are already in this specific location
       const contents = locData.contents ?? []
       setExistingItemIds(new Set(contents.map((c: { product_id: string }) => c.product_id)))
+
+      // For shelves, compute column layout from child bins
+      if (loc?.unit_subtype === "shelf") {
+        const allLocs = locData.locations ?? []
+        const childBins = allLocs
+          .filter((l: Location) => l.parent_id === locationId)
+          .sort((a: Location, b: Location) => a.sort_order - b.sort_order)
+        const tree = buildLocationTree(childBins)
+        const cols = tree.map((bin) => {
+          const dims = getEffectiveDimensions(bin)
+          return { widthIn: dims.width ?? 10, name: bin.name }
+        })
+        setBinColumns(cols)
+        setShelfWidth(loc.width_in ?? 36.25)
+      }
     })
   }, [locationId, authLoading])
 
@@ -56,11 +77,14 @@ export default function AddItemToLocationPage() {
       })
     : allProducts
 
+  const isShelf = location?.unit_subtype === "shelf"
+
   const handleAdd = async (productId: string) => {
     setAdding(productId)
     await store.addProductToLocation({
       product_id: productId,
       location_id: locationId,
+      ...(isShelf ? { depth_row: depthRow, col_index: colIndex } : {}),
     })
     setUnsorted((prev) => prev.filter((p) => p.id !== productId))
     setExistingItemIds((prev) => new Set([...prev, productId]))
@@ -105,6 +129,69 @@ export default function AddItemToLocationPage() {
           New Product
         </Link>
       </div>
+
+      {/* Position picker — only for shelves */}
+      {isShelf && binColumns.length > 0 && (
+        <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] p-4 space-y-3">
+          <h2 className="text-[13px] font-semibold">Shelf position</h2>
+
+          {/* Front/Back toggle */}
+          <div>
+            <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Depth row</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDepthRow("front")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                  depthRow === "front" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                }`}
+              >
+                Front
+              </button>
+              <button
+                type="button"
+                onClick={() => setDepthRow("back")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                  depthRow === "back" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                }`}
+              >
+                Back
+              </button>
+            </div>
+          </div>
+
+          {/* Column picker — mini shelf diagram */}
+          <div>
+            <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">
+              Column {colIndex != null ? `(${colIndex + 1} of ${binColumns.length})` : "(tap to select)"}
+            </label>
+            <div className="flex gap-1 rounded-lg border p-2 bg-secondary/30">
+              {binColumns.map((col, idx) => {
+                const widthPct = (col.widthIn / shelfWidth) * 100
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setColIndex(colIndex === idx ? null : idx)}
+                    className={`rounded-md border px-1 py-3 text-[10px] font-medium transition-colors truncate ${
+                      colIndex === idx
+                        ? "border-primary bg-primary/15 text-primary ring-1 ring-primary/30"
+                        : "border-muted-foreground/20 bg-card text-muted-foreground hover:bg-accent"
+                    }`}
+                    style={{ width: `${Math.max(widthPct, 100 / binColumns.length)}%` }}
+                    title={`${col.name} (${col.widthIn}")`}
+                  >
+                    {col.name.length > 10 ? col.name.slice(0, 8) + "\u2026" : col.name}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Select which column slot this item goes in (behind or next to a bin)
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b">

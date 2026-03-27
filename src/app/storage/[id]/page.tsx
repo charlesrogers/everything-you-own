@@ -51,6 +51,7 @@ export default function LocationDetailPage() {
   const [childLocations, setChildLocations] = useState<Location[]>([])
   const [contents, setContents] = useState<ProductLocationWithProduct[]>([])
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({})
+  const [shelfItemsByPosition, setShelfItemsByPosition] = useState<Record<string, { front: Record<string, number>; back: Record<string, number> }>>({})
   const [loading, setLoading] = useState(true)
   const [showAddChild, setShowAddChild] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -93,6 +94,7 @@ export default function LocationDetailPage() {
       setBreadcrumbs(crumbs)
       setContents(items)
       setItemCounts(counts)
+      setShelfItemsByPosition(data.shelfItemsByPosition ?? {})
 
       const kids = allLocs.filter((l: Location) => l.parent_id === locationId)
       setChildLocations(kids)
@@ -444,6 +446,7 @@ export default function LocationDetailPage() {
             <RackVisualization
               rack={{ ...location, children }}
               itemCounts={itemCounts}
+              shelfItems={shelfItemsByPosition}
               onReorderShelves={handleReorderShelves}
               onReorderBins={handleReorderBins}
             />
@@ -519,88 +522,129 @@ export default function LocationDetailPage() {
       </div>
 
       {/* Items — only show on leaf-ish locations (shelves, bins, drawers) */}
-      {(location.location_type === "compartment" || children.length === 0) && (
-        <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
-          <div className="px-4 py-3 border-b flex items-center justify-between">
-            <h2 className="text-[14px] font-semibold">
-              Items ({contents.length})
-            </h2>
-            <Link
-              href={`/storage/${locationId}/add`}
-              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] font-medium hover:bg-accent transition-colors"
-            >
-              <Plus className="size-3" />
-              Add Item
-            </Link>
-          </div>
+      {(location.location_type === "compartment" || children.length === 0) && (() => {
+        const isShelf = location.unit_subtype === "shelf"
+        const hasPositionedItems = isShelf && contents.some((c) => c.depth_row === "back" || c.col_index != null)
 
-          {contents.length === 0 ? (
-            <div className="p-8 text-center text-[13px] text-muted-foreground">
-              <Package className="size-8 text-muted-foreground/30 mx-auto mb-2" />
-              No items here yet.
-              <div className="mt-3">
+        // Group items by position for shelves
+        const frontItems = hasPositionedItems ? contents.filter((c) => (c.depth_row ?? "front") === "front") : []
+        const backItems = hasPositionedItems ? contents.filter((c) => c.depth_row === "back") : []
+
+        const renderItem = (item: ProductLocationWithProduct) => (
+          <div
+            key={item.id}
+            className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
+          >
+            {item.product_image_url ? (
+              <img
+                src={item.product_image_url}
+                alt={item.product_name}
+                className="size-10 rounded-lg object-cover border"
+              />
+            ) : (
+              <div className="size-10 rounded-lg bg-secondary flex items-center justify-center">
+                <Package className="size-4 text-muted-foreground" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
                 <Link
-                  href={`/storage/${locationId}/add`}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                  href={`/products/${item.product_id}`}
+                  className="text-[13px] font-medium text-foreground hover:text-primary truncate"
                 >
-                  <Plus className="size-3.5" />
-                  Add Items
+                  {item.product_name}
                 </Link>
+                {hasPositionedItems && item.col_index != null && (
+                  <span className="text-[9px] font-mono bg-secondary text-muted-foreground px-1 py-0.5 rounded shrink-0">
+                    C{item.col_index + 1}
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {item.product_brand && <span>{item.product_brand} &middot; </span>}
+                qty: {item.quantity}
+                {item.is_consumable && item.consumable_quantity != null && (
+                  <span>
+                    {" "}&middot; {item.consumable_quantity} {item.consumable_unit ?? "units"} left
+                  </span>
+                )}
               </div>
             </div>
-          ) : (
-            <div className="divide-y">
-              {contents.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
-                >
-                  {item.product_image_url ? (
-                    <img
-                      src={item.product_image_url}
-                      alt={item.product_name}
-                      className="size-10 rounded-lg object-cover border"
-                    />
-                  ) : (
-                    <div className="size-10 rounded-lg bg-secondary flex items-center justify-center">
-                      <Package className="size-4 text-muted-foreground" />
+            {item.product_price != null && (
+              <span className="text-[12px] text-muted-foreground">
+                ${item.product_price.toFixed(2)}
+              </span>
+            )}
+            <button
+              onClick={() => handleRemoveItem(item.id)}
+              className="size-7 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+              title="Remove from location"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </div>
+        )
+
+        return (
+          <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
+            <div className="px-4 py-3 border-b flex items-center justify-between">
+              <h2 className="text-[14px] font-semibold">
+                Items ({contents.length})
+              </h2>
+              <Link
+                href={`/storage/${locationId}/add`}
+                className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] font-medium hover:bg-accent transition-colors"
+              >
+                <Plus className="size-3" />
+                Add Item
+              </Link>
+            </div>
+
+            {contents.length === 0 ? (
+              <div className="p-8 text-center text-[13px] text-muted-foreground">
+                <Package className="size-8 text-muted-foreground/30 mx-auto mb-2" />
+                No items here yet.
+                <div className="mt-3">
+                  <Link
+                    href={`/storage/${locationId}/add`}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                  >
+                    <Plus className="size-3.5" />
+                    Add Items
+                  </Link>
+                </div>
+              </div>
+            ) : hasPositionedItems ? (
+              <div>
+                {frontItems.length > 0 && (
+                  <div>
+                    <div className="px-4 py-1.5 bg-secondary/40 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Front row
                     </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <Link
-                      href={`/products/${item.product_id}`}
-                      className="text-[13px] font-medium text-foreground hover:text-primary truncate block"
-                    >
-                      {item.product_name}
-                    </Link>
-                    <div className="text-[11px] text-muted-foreground">
-                      {item.product_brand && <span>{item.product_brand} &middot; </span>}
-                      qty: {item.quantity}
-                      {item.is_consumable && item.consumable_quantity != null && (
-                        <span>
-                          {" "}&middot; {item.consumable_quantity} {item.consumable_unit ?? "units"} left
-                        </span>
-                      )}
+                    <div className="divide-y">
+                      {frontItems.map(renderItem)}
                     </div>
                   </div>
-                  {item.product_price != null && (
-                    <span className="text-[12px] text-muted-foreground">
-                      ${item.product_price.toFixed(2)}
-                    </span>
-                  )}
-                  <button
-                    onClick={() => handleRemoveItem(item.id)}
-                    className="size-7 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                    title="Remove from location"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                )}
+                {backItems.length > 0 && (
+                  <div>
+                    <div className="px-4 py-1.5 bg-secondary/40 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-t">
+                      Back row
+                    </div>
+                    <div className="divide-y">
+                      {backItems.map(renderItem)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="divide-y">
+                {contents.map(renderItem)}
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

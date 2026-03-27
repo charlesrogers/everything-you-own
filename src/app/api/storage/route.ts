@@ -43,15 +43,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: locErr.message }, { status: 500 })
   }
 
-  // Fetch all product_location counts
+  // Fetch all product_location counts + position data
   const { data: plData } = await sb
     .from('product_locations')
-    .select('location_id')
+    .select('location_id, depth_row, col_index')
     .eq('household_id', hid)
 
   const itemCounts: Record<string, number> = {}
+  // shelfItemsByPosition: { [locationId]: { front: { [colIndex|'none']: count }, back: { ... } } }
+  const shelfItemsByPosition: Record<string, { front: Record<string, number>; back: Record<string, number> }> = {}
   for (const row of plData ?? []) {
     itemCounts[row.location_id] = (itemCounts[row.location_id] || 0) + 1
+    const r = row as Record<string, unknown>
+    const depthRow = (r.depth_row as string) ?? 'front'
+    const colKey = r.col_index != null ? String(r.col_index) : 'none'
+    if (!shelfItemsByPosition[row.location_id]) {
+      shelfItemsByPosition[row.location_id] = { front: {}, back: {} }
+    }
+    const rowBucket = depthRow === 'back' ? 'back' : 'front'
+    shelfItemsByPosition[row.location_id][rowBucket][colKey] = (shelfItemsByPosition[row.location_id][rowBucket][colKey] || 0) + 1
   }
 
   // If a specific location is requested, also fetch its contents
@@ -68,6 +78,7 @@ export async function GET(request: NextRequest) {
 
     contents = (contentData ?? []).map((row) => {
       const product = (row as Record<string, unknown>).products as Record<string, unknown> | null
+      const r = row as Record<string, unknown>
       return {
         id: row.id,
         product_id: row.product_id,
@@ -75,6 +86,8 @@ export async function GET(request: NextRequest) {
         household_id: row.household_id,
         quantity: row.quantity,
         notes: row.notes,
+        depth_row: (r.depth_row as string) ?? 'front',
+        col_index: r.col_index != null ? Number(r.col_index) : null,
         added_at: row.added_at,
         added_by: row.added_by,
         product_name: product?.name ?? 'Unknown',
@@ -92,6 +105,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     locations: locations ?? [],
     itemCounts,
+    shelfItemsByPosition,
     contents,
   })
 }
