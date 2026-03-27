@@ -28,6 +28,7 @@ import { LocationTree } from "@/components/location-tree"
 import { AddSublocationForm } from "@/components/add-sublocation-form"
 import { RackVisualization } from "@/components/rack-visualization"
 import { RoomVisualization } from "@/components/room-visualization"
+import { ShelfOrganizer } from "@/components/shelf-organizer"
 
 function getAllDescendants(parentId: string, allLocs: import("@/lib/wms-types").Location[]): import("@/lib/wms-types").Location[] {
   const directKids = allLocs.filter((l) => l.parent_id === parentId)
@@ -460,6 +461,17 @@ export default function LocationDetailPage() {
               onReorderBins={handleReorderBins}
             />
           </div>
+        </div>
+      )}
+
+      {/* Shelf organizer — column-based drag layout for bins */}
+      {location.unit_subtype === "shelf" && childLocations.length > 0 && (
+        <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] p-4">
+          <ShelfOrganizer
+            shelf={{ ...location, children }}
+            itemCounts={itemCounts}
+            onMoveBin={handleMoveBinToCol}
+          />
         </div>
       )}
 
