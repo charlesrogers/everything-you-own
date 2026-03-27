@@ -197,24 +197,29 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
       tags,
     }
 
-    if (mode === "create") {
-      const newProduct = await store.addProduct(data)
-      if (assignToLocationId) {
-        const qty = parseInt(quantity) || 1
-        await store.addProductToLocation({ product_id: newProduct.id, location_id: assignToLocationId, quantity: qty })
-        if (addAnotherRef.current) {
-          resetForm()
-          setSaving(false)
-          addAnotherRef.current = false
-          return
+    try {
+      if (mode === "create") {
+        const newProduct = await store.addProduct(data)
+        if (assignToLocationId) {
+          const qty = parseInt(quantity) || 1
+          await store.addProductToLocation({ product_id: newProduct.id, location_id: assignToLocationId, quantity: qty })
+          if (addAnotherRef.current) {
+            resetForm()
+            addAnotherRef.current = false
+            return
+          }
+          router.push(`/storage/${assignToLocationId}`)
+        } else {
+          router.push(`/products/${newProduct.id}`)
         }
-        router.push(`/storage/${assignToLocationId}`)
-      } else {
-        router.push(`/products/${newProduct.id}`)
+      } else if (product) {
+        await store.updateProduct(product.id, data)
+        router.push(`/products/${product.id}`)
       }
-    } else if (product) {
-      await store.updateProduct(product.id, data)
-      router.push(`/products/${product.id}`)
+    } catch (err) {
+      console.error("Failed to save product:", err)
+    } finally {
+      setSaving(false)
     }
   }
 
