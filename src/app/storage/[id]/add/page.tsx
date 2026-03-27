@@ -95,8 +95,15 @@ export default function AddItemToLocationPage() {
         <span className="text-foreground font-medium">Add Item</span>
       </div>
 
-      <div>
+      <div className="flex items-center justify-between">
         <h1 className="text-[20px] font-bold">Add Item to {location.name}</h1>
+        <Link
+          href={`/products/new?location=${locationId}`}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          <Plus className="size-3.5" />
+          New Product
+        </Link>
       </div>
 
       {/* Tabs */}

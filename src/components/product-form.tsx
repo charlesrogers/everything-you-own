@@ -32,9 +32,11 @@ import { useStore } from "@/hooks/use-store"
 interface ProductFormProps {
   product?: Product
   mode: "create" | "edit"
+  /** If set, auto-assign the new product to this location after creation */
+  assignToLocationId?: string | null
 }
 
-export function ProductForm({ product, mode }: ProductFormProps) {
+export function ProductForm({ product, mode, assignToLocationId }: ProductFormProps) {
   const router = useRouter()
   const store = useStore()
   const [categories, setCategories] = useState<Category[]>([])
@@ -165,7 +167,12 @@ export function ProductForm({ product, mode }: ProductFormProps) {
 
     if (mode === "create") {
       const newProduct = await store.addProduct(data)
-      router.push(`/products/${newProduct.id}`)
+      if (assignToLocationId) {
+        await store.addProductToLocation({ product_id: newProduct.id, location_id: assignToLocationId })
+        router.push(`/storage/${assignToLocationId}`)
+      } else {
+        router.push(`/products/${newProduct.id}`)
+      }
     } else if (product) {
       await store.updateProduct(product.id, data)
       router.push(`/products/${product.id}`)
