@@ -26,6 +26,10 @@ jobs:
           tags: |
             ghcr.io/charlesrogers/everything-you-own-app:latest
             ghcr.io/charlesrogers/everything-you-own-app:${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=http://95.216.205.160:8100
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_USE_SUPABASE=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Deploy
