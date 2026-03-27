@@ -146,6 +146,13 @@ export default function LocationDetailPage() {
     await loadData()
   }
 
+  const handleReorderChildren = async (orderedIds: string[]) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await store.updateLocation(orderedIds[i], { sort_order: i })
+    }
+    await loadData()
+  }
+
   const startEditing = () => {
     if (!location) return
     setEditName(location.name)
@@ -506,7 +513,7 @@ export default function LocationDetailPage() {
           </div>
         ) : children.length > 0 ? (
           <div className="p-2">
-            <LocationTree tree={children} itemCounts={itemCounts} onDelete={handleDeleteLocation} />
+            <LocationTree tree={children} itemCounts={itemCounts} onDelete={handleDeleteLocation} onReorder={handleReorderChildren} />
           </div>
         ) : null}
       </div>

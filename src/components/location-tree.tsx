@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import Link from "next/link"
 import {
   ChevronRight,
@@ -15,6 +15,7 @@ import {
   DoorClosed,
   Grid3X3,
   GripHorizontal,
+  GripVertical,
   Square,
   Settings,
   Box,
@@ -54,9 +55,14 @@ interface LocationTreeItemProps {
   depth: number
   itemCounts: Record<string, number>
   onDelete?: (id: string) => void
+  draggable?: boolean
+  onDragStart?: (e: React.DragEvent, id: string) => void
+  onDragOver?: (e: React.DragEvent, id: string) => void
+  onDrop?: (e: React.DragEvent) => void
+  dragOverId?: string | null
 }
 
-function LocationTreeItem({ node, depth, itemCounts, onDelete }: LocationTreeItemProps) {
+function LocationTreeItem({ node, depth, itemCounts, onDelete, draggable, onDragStart, onDragOver, onDrop, dragOverId }: LocationTreeItemProps) {
   const [expanded, setExpanded] = useState(depth < 2)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const hasChildren = node.children.length > 0
@@ -64,9 +70,16 @@ function LocationTreeItem({ node, depth, itemCounts, onDelete }: LocationTreeIte
   const count = itemCounts[node.id] ?? 0
 
   return (
-    <div>
+    <div
+      draggable={draggable}
+      onDragStart={draggable ? (e) => onDragStart?.(e, node.id) : undefined}
+      onDragOver={draggable ? (e) => onDragOver?.(e, node.id) : undefined}
+      onDrop={draggable ? onDrop : undefined}
+    >
       <div
-        className="group flex items-center gap-1.5 py-1 px-2 rounded-md hover:bg-accent transition-colors"
+        className={`group flex items-center gap-1.5 py-1 px-2 rounded-md hover:bg-accent transition-colors ${
+          dragOverId === node.id ? "bg-primary/10 border-t-2 border-primary" : ""
+        }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
         {hasChildren ? (
@@ -78,6 +91,9 @@ function LocationTreeItem({ node, depth, itemCounts, onDelete }: LocationTreeIte
           </button>
         ) : (
           <span className="size-5" />
+        )}
+        {draggable && (
+          <GripVertical className="size-3 text-muted-foreground/50 shrink-0 cursor-grab active:cursor-grabbing" />
         )}
         <Icon className="size-3.5 text-muted-foreground shrink-0" />
         <Link
@@ -143,10 +159,22 @@ interface LocationTreeProps {
   tree: LocationTreeNode[]
   itemCounts: Record<string, number>
   onDelete?: (id: string) => void
+  onReorder?: (orderedIds: string[]) => void
 }
 
-export function LocationTree({ tree, itemCounts, onDelete }: LocationTreeProps) {
-  if (tree.length === 0) {
+export function LocationTree({ tree, itemCounts, onDelete, onReorder }: LocationTreeProps) {
+  const [items, setItems] = useState(tree)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const dragItemId = useRef<string | null>(null)
+
+  // Sync with prop changes
+  const [prevTree, setPrevTree] = useState(tree)
+  if (tree !== prevTree) {
+    setPrevTree(tree)
+    setItems(tree)
+  }
+
+  if (items.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground text-[13px]">
         No storage locations set up yet.
@@ -154,10 +182,59 @@ export function LocationTree({ tree, itemCounts, onDelete }: LocationTreeProps) 
     )
   }
 
+  const canReorder = !!onReorder && items.length > 1
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    dragItemId.current = id
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    if (id !== dragItemId.current) {
+      setDragOverId(id)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    if (!dragItemId.current || !dragOverId) {
+      setDragOverId(null)
+      dragItemId.current = null
+      return
+    }
+    const fromIdx = items.findIndex((n) => n.id === dragItemId.current)
+    const toIdx = items.findIndex((n) => n.id === dragOverId)
+    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) {
+      setDragOverId(null)
+      dragItemId.current = null
+      return
+    }
+    const reordered = [...items]
+    const [moved] = reordered.splice(fromIdx, 1)
+    reordered.splice(toIdx, 0, moved)
+    setItems(reordered)
+    setDragOverId(null)
+    dragItemId.current = null
+    onReorder!(reordered.map((n) => n.id))
+  }
+
   return (
-    <div className="space-y-0.5">
-      {tree.map((node) => (
-        <LocationTreeItem key={node.id} node={node} depth={0} itemCounts={itemCounts} onDelete={onDelete} />
+    <div className="space-y-0.5" onDragEnd={() => { setDragOverId(null); dragItemId.current = null }}>
+      {items.map((node) => (
+        <LocationTreeItem
+          key={node.id}
+          node={node}
+          depth={0}
+          itemCounts={itemCounts}
+          onDelete={onDelete}
+          draggable={canReorder}
+          onDragStart={canReorder ? handleDragStart : undefined}
+          onDragOver={canReorder ? handleDragOver : undefined}
+          onDrop={canReorder ? handleDrop : undefined}
+          dragOverId={dragOverId}
+        />
       ))}
     </div>
   )
