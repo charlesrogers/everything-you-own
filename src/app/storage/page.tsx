@@ -68,23 +68,28 @@ export default function StoragePage() {
     const parentId = shelfId || addBinShelfId
     if (!parentId || !addBinName.trim()) return
     setAddingBin(true)
-    const template = SAMLA_BINS.find((b) => b.id === addBinTemplate)
-    await store.createLocation({
-      parent_id: parentId,
-      location_type: "compartment",
-      unit_subtype: "bin",
-      name: addBinName.trim(),
-      template_id: addBinTemplate || null,
-      width_in: template?.widthIn ?? null,
-      depth_in: template?.depthIn ?? null,
-      height_in: template?.heightIn ?? null,
-    })
-    setAddBinName("")
-    setAddBinTemplate("")
-    setAddBinShelfId("")
-    setShowAddBin(false)
-    setAddingBin(false)
-    await reloadData()
+    try {
+      const template = SAMLA_BINS.find((b) => b.id === addBinTemplate)
+      await store.createLocation({
+        parent_id: parentId,
+        location_type: "compartment",
+        unit_subtype: "bin",
+        name: addBinName.trim(),
+        template_id: addBinTemplate || null,
+        width_in: template?.widthIn ?? null,
+        depth_in: template?.depthIn ?? null,
+        height_in: template?.heightIn ?? null,
+      })
+      setAddBinName("")
+      setAddBinTemplate("")
+      setAddBinShelfId("")
+      setShowAddBin(false)
+      await reloadData()
+    } catch (err) {
+      console.error("Failed to add bin:", err)
+    } finally {
+      setAddingBin(false)
+    }
   }
 
   // Build location map for parent paths
