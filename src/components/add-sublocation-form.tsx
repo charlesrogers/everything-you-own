@@ -133,6 +133,7 @@ export function AddSublocationForm({
   const [dimDepth, setDimDepth] = useState("")
   const [dimHeight, setDimHeight] = useState("")
   const [selectedBinTemplate, setSelectedBinTemplate] = useState<string | null>(null)
+  const [depthRow, setDepthRow] = useState<"front" | "back">("front")
   const [quantity, setQuantity] = useState(1)
   const [saving, setSaving] = useState(false)
   const [lastCreatedId, setLastCreatedId] = useState<string | null>(null)
@@ -187,6 +188,7 @@ export function AddSublocationForm({
         depth_in: bin?.depthIn ?? (dimDepth ? parseFloat(dimDepth) : null),
         height_in: bin?.heightIn ?? (dimHeight ? parseFloat(dimHeight) : null),
         sort_order: currentCtx.childCount + i,
+        metadata: selectedSubtype === "bin" && depthRow === "back" ? { depth_row: "back" } : undefined,
       })
       if (result) lastId = result
     }
@@ -208,6 +210,7 @@ export function AddSublocationForm({
     setDimDepth("")
     setDimHeight("")
     setSelectedBinTemplate(null)
+    setDepthRow("front")
     setQuantity(1)
   }
 
@@ -420,6 +423,38 @@ export function AddSublocationForm({
             </p>
           )}
         </div>
+
+        {/* Front/Back row — only for bins */}
+        {isBin && (
+          <div>
+            <label className="text-[12px] font-medium text-muted-foreground mb-1.5 block">
+              Shelf position
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDepthRow("front")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                  depthRow === "front" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                }`}
+              >
+                Front
+              </button>
+              <button
+                type="button"
+                onClick={() => setDepthRow("back")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                  depthRow === "back" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                }`}
+              >
+                Back
+              </button>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Half-depth bins can sit front-to-back on the same shelf
+            </p>
+          </div>
+        )}
 
         {/* Short label */}
         <div>
