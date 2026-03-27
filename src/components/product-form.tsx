@@ -87,13 +87,16 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
 
   useEffect(() => {
     async function load() {
-      const [cats, subs] = await Promise.all([
-        store.getCategories(),
-        store.getSubcategories(),
-      ])
-      setCategories(cats)
-      setSubcategories(subs)
-      // Don't auto-select — only name is required
+      try {
+        const [cats, subs] = await Promise.all([
+          store.getCategories(),
+          store.getSubcategories(),
+        ])
+        setCategories(cats)
+        setSubcategories(subs)
+      } catch {
+        // Auth may not be ready yet — categories are optional
+      }
     }
     load()
   }, [store])

@@ -39,6 +39,7 @@ export async function ensureDefaultCategories(sb: Client, householdId: string): 
 // --- Categories ---
 
 export async function getCategories(sb: Client, householdId: string): Promise<Category[]> {
+  if (!householdId) return []
   const { data, error } = await sb
     .from('categories')
     .select('id, name, sort_order, is_default')
@@ -80,6 +81,7 @@ export async function getSubcategories(
   householdId: string,
   categoryId?: string
 ): Promise<Subcategory[]> {
+  if (!householdId) return []
   let query = sb
     .from('subcategories')
     .select('id, category_id, name, sort_order, is_default')
@@ -157,6 +159,7 @@ export async function addProduct(
   userId: string | null,
   product: Omit<Product, 'id' | 'date_added' | 'created_at' | 'updated_at'>
 ): Promise<Product> {
+  if (!householdId) throw new Error('Cannot add product: not authenticated')
   const { data, error } = await sb
     .from('products')
     .insert({

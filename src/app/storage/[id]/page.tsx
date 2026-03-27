@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { ChevronRight, Plus, Trash2, Package, Nfc, Trash, Pencil, Check, X, ChevronDown, Copy, ClipboardCheck } from "lucide-react"
 import { SAMLA_BINS } from "@/lib/wms-constants"
+import { ShelfOrganizer } from "@/components/shelf-organizer"
 
 const SAMLA_OPTIONS = SAMLA_BINS.map((bin) => ({
   id: bin.id,
@@ -28,7 +29,6 @@ import { LocationTree } from "@/components/location-tree"
 import { AddSublocationForm } from "@/components/add-sublocation-form"
 import { RackVisualization } from "@/components/rack-visualization"
 import { RoomVisualization } from "@/components/room-visualization"
-import { ShelfOrganizer } from "@/components/shelf-organizer"
 
 function getAllDescendants(parentId: string, allLocs: import("@/lib/wms-types").Location[]): import("@/lib/wms-types").Location[] {
   const directKids = allLocs.filter((l) => l.parent_id === parentId)
@@ -65,6 +65,8 @@ export default function LocationDetailPage() {
   const [editHeight, setEditHeight] = useState("")
   const [editBinTemplate, setEditBinTemplate] = useState<string | null>(null)
   const [showBinPicker, setShowBinPicker] = useState(false)
+  const [editDepthRow, setEditDepthRow] = useState<"front" | "back" | "full">("front")
+  const [parentDepthIn, setParentDepthIn] = useState<number | null>(null)
 
   const loadData = useCallback(async () => {
     if (authLoading) return
@@ -156,11 +158,14 @@ export default function LocationDetailPage() {
     await loadData()
   }
 
-  const handleMoveBinToCol = async (binId: string, colIndex: number, sortOrder: number) => {
-    // Update the bin's metadata.col_index and sort_order
+  const handleMoveBinToCol = async (binId: string, colIndex: number, sortOrder: number, depthRow?: "front" | "back") => {
     const bin = childLocations.find((l) => l.id === binId)
     if (!bin) return
-    const metadata = { ...(bin.metadata as Record<string, unknown>), col_index: colIndex }
+    const metadata = {
+      ...(bin.metadata as Record<string, unknown>),
+      col_index: colIndex,
+      ...(depthRow ? { depth_row: depthRow } : {}),
+    }
     await store.updateLocation(binId, { metadata, sort_order: sortOrder })
     await loadData()
   }

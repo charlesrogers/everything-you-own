@@ -74,7 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .single()
 
           setHouseholdId(membership?.household_id ?? null)
-        } else {
+        } else if (_event === 'SIGNED_OUT') {
+          // Only clear householdId on explicit sign-out, not token refresh
           setHouseholdId(null)
         }
       }
