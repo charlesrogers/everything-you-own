@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ChevronRight, Package, Plus, Search } from "lucide-react"
+import { ArrowLeft, ChevronRight, Package, Plus, Search, Check, MapPin } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { useStore } from "@/hooks/use-store"
 import type { Location, LocationBreadcrumb } from "@/lib/wms-types"
@@ -19,10 +19,12 @@ export default function AddItemToLocationPage() {
   const [location, setLocation] = useState<Location | null>(null)
   const [breadcrumbs, setBreadcrumbs] = useState<LocationBreadcrumb[]>([])
   const [searchQuery, setSearchQuery] = useState("")
-  const [products, setProducts] = useState<Product[]>([])
+  const [allProducts, setAllProducts] = useState<Product[]>([])
   const [unsorted, setUnsorted] = useState<{ id: string; name: string; brand: string | null; image_url: string | null }[]>([])
-  const [tab, setTab] = useState<"search" | "unsorted">("unsorted")
+  const [tab, setTab] = useState<"unsorted" | "all">("unsorted")
   const [adding, setAdding] = useState<string | null>(null)
+  const [justAdded, setJustAdded] = useState<Set<string>>(new Set())
+  const [existingItemIds, setExistingItemIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (authLoading) return
@@ -30,18 +32,29 @@ export default function AddItemToLocationPage() {
       store.getLocation(locationId),
       store.getLocationBreadcrumbs(locationId),
       store.getUnsortedProducts(),
-    ]).then(([loc, crumbs, uns]) => {
+      store.getProducts(),
+      fetch(`/api/storage?id=${locationId}`).then((r) => r.json()),
+    ]).then(([loc, crumbs, uns, prods, locData]) => {
       setLocation(loc ?? null)
       setBreadcrumbs(crumbs)
       setUnsorted(uns)
+      setAllProducts(prods)
+      // Track which products are already in this specific location
+      const contents = locData.contents ?? []
+      setExistingItemIds(new Set(contents.map((c: { product_id: string }) => c.product_id)))
     })
   }, [locationId, authLoading])
 
-  useEffect(() => {
-    if (tab === "search" && searchQuery.trim()) {
-      store.searchProducts(searchQuery).then(setProducts)
-    }
-  }, [searchQuery, tab])
+  const filtered = searchQuery.trim()
+    ? allProducts.filter((p) => {
+        const q = searchQuery.toLowerCase()
+        return (
+          p.name.toLowerCase().includes(q) ||
+          (p.brand?.toLowerCase().includes(q) ?? false) ||
+          (p.retailer?.toLowerCase().includes(q) ?? false)
+        )
+      })
+    : allProducts
 
   const handleAdd = async (productId: string) => {
     setAdding(productId)
@@ -50,7 +63,8 @@ export default function AddItemToLocationPage() {
       location_id: locationId,
     })
     setUnsorted((prev) => prev.filter((p) => p.id !== productId))
-    setProducts((prev) => prev.filter((p) => p.id !== productId))
+    setExistingItemIds((prev) => new Set([...prev, productId]))
+    setJustAdded((prev) => new Set([...prev, productId]))
     setAdding(null)
   }
 
@@ -96,24 +110,24 @@ export default function AddItemToLocationPage() {
           Unsorted ({unsorted.length})
         </button>
         <button
-          onClick={() => setTab("search")}
+          onClick={() => setTab("all")}
           className={`px-3 py-2 text-[13px] font-medium border-b-2 transition-colors ${
-            tab === "search" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+            tab === "all" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          Search All Products
+          All Products ({allProducts.length})
         </button>
       </div>
 
-      {/* Search input */}
-      {tab === "search" && (
+      {/* Search input — shown for All Products tab */}
+      {tab === "all" && (
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search products..."
+            placeholder="Filter products..."
             className="w-full rounded-lg border bg-background pl-10 pr-3 py-2 text-[13px]"
             autoFocus
           />
@@ -125,47 +139,69 @@ export default function AddItemToLocationPage() {
         {tab === "unsorted" && unsorted.length === 0 && (
           <div className="p-8 text-center text-[13px] text-muted-foreground">
             All products have been assigned to locations.
-          </div>
-        )}
-        {tab === "search" && !searchQuery.trim() && (
-          <div className="p-8 text-center text-[13px] text-muted-foreground">
-            Type to search your products.
-          </div>
-        )}
-        {(tab === "unsorted" ? unsorted : products).map((item) => (
-          <div
-            key={item.id}
-            className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
-          >
-            {"image_url" in item && item.image_url ? (
-              <img
-                src={item.image_url as string}
-                alt={item.name}
-                className="size-10 rounded-lg object-cover border"
-              />
-            ) : (
-              <div className="size-10 rounded-lg bg-secondary flex items-center justify-center">
-                <Package className="size-4 text-muted-foreground" />
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <span className="text-[13px] font-medium text-foreground truncate block">
-                {item.name}
-              </span>
-              {item.brand && (
-                <span className="text-[11px] text-muted-foreground">{item.brand}</span>
-              )}
-            </div>
             <button
-              onClick={() => handleAdd(item.id)}
-              disabled={adding === item.id}
-              className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+              onClick={() => setTab("all")}
+              className="block mx-auto mt-2 text-primary hover:text-primary/80 font-medium"
             >
-              <Plus className="size-3" />
-              {adding === item.id ? "Adding..." : "Add"}
+              Browse all products instead
             </button>
           </div>
-        ))}
+        )}
+        {tab === "all" && filtered.length === 0 && (
+          <div className="p-8 text-center text-[13px] text-muted-foreground">
+            {searchQuery.trim() ? "No products match your search." : "No products in your database yet."}
+          </div>
+        )}
+        {(tab === "unsorted" ? unsorted : filtered).map((item) => {
+          const alreadyHere = existingItemIds.has(item.id)
+          const wasJustAdded = justAdded.has(item.id)
+
+          return (
+            <div
+              key={item.id}
+              className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                alreadyHere ? "bg-primary/5" : "hover:bg-accent/50"
+              }`}
+            >
+              {"image_url" in item && item.image_url ? (
+                <img
+                  src={item.image_url as string}
+                  alt={item.name}
+                  className="size-10 rounded-lg object-cover border"
+                />
+              ) : (
+                <div className="size-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Package className="size-4 text-muted-foreground" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <span className="text-[13px] font-medium text-foreground truncate block">
+                  {item.name}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {item.brand && (
+                    <span className="text-[11px] text-muted-foreground">{item.brand}</span>
+                  )}
+                </div>
+              </div>
+              {alreadyHere ? (
+                <span className="inline-flex items-center gap-1 rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1 text-[12px] font-medium text-primary">
+                  <Check className="size-3" />
+                  {wasJustAdded ? "Added" : "Here"}
+                </span>
+              ) : (
+                <button
+                  onClick={() => handleAdd(item.id)}
+                  disabled={adding === item.id}
+                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  <Plus className="size-3" />
+                  {adding === item.id ? "Adding..." : "Add"}
+                </button>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       <Link
