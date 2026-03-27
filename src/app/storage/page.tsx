@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
-import { Plus, Warehouse, Settings2, Package, Minus, Nfc, Copy, ClipboardCheck, Inbox } from "lucide-react"
+import { Plus, Warehouse, Settings2, Package, Minus, Nfc, Copy, ClipboardCheck, Inbox, ChevronDown, ChevronRight, Trash2 } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { useStore } from "@/hooks/use-store"
 import type { Location, LocationTreeNode } from "@/lib/wms-types"
@@ -21,6 +21,9 @@ export default function StoragePage() {
   const [tab, setTab] = useState<Tab>("tree")
   const [tagFilter, setTagFilter] = useState<"all" | "untagged" | "tagged">("untagged")
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedItems, setExpandedItems] = useState<Record<string, unknown>[]>([])
+  const [loadingItems, setLoadingItems] = useState(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -78,6 +81,22 @@ export default function StoragePage() {
   const tagProgress = bins.length > 0 ? Math.round((taggedBins.length / bins.length) * 100) : 0
 
   const filteredTagBins = tagFilter === "untagged" ? untaggedBins : tagFilter === "tagged" ? taggedBins : bins
+
+  async function toggleExpand(locId: string) {
+    if (expandedId === locId) {
+      setExpandedId(null)
+      setExpandedItems([])
+      return
+    }
+    setExpandedId(locId)
+    setLoadingItems(true)
+    try {
+      const res = await fetch(`/api/storage?id=${locId}`)
+      const data = await res.json()
+      setExpandedItems(data.contents ?? [])
+    } catch { setExpandedItems([]) }
+    setLoadingItems(false)
+  }
 
   function copyNfcUrl(loc: Location) {
     if (!loc.short_id) return
@@ -193,72 +212,136 @@ export default function StoragePage() {
 
           {/* All Bins tab */}
           {tab === "bins" && (
-            <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden divide-y">
+            <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
               {bins.length === 0 ? (
                 <div className="p-8 text-center text-[13px] text-muted-foreground">
                   No bins yet. Add bins to your shelves first.
                 </div>
-              ) : bins.map((bin) => (
-                <Link
-                  key={bin.id}
-                  href={`/storage/${bin.id}`}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
-                >
-                  <Package className="size-4 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium truncate">{bin.name}</div>
-                    <div className="text-[11px] text-muted-foreground">{getParentPath(bin)}</div>
+              ) : bins.map((bin) => {
+                const isExpanded = expandedId === bin.id
+                const count = itemCounts[bin.id] ?? 0
+                return (
+                  <div key={bin.id} className="border-b last:border-b-0">
+                    <div className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors">
+                      <button onClick={() => toggleExpand(bin.id)} className="shrink-0">
+                        {isExpanded ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
+                      </button>
+                      <Package className="size-4 text-muted-foreground shrink-0" />
+                      <Link href={`/storage/${bin.id}`} className="flex-1 min-w-0 hover:text-primary">
+                        <div className="text-[13px] font-medium truncate">{bin.name}</div>
+                        <div className="text-[11px] text-muted-foreground">{getParentPath(bin)}</div>
+                      </Link>
+                      {bin.template_id && (
+                        <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded hidden sm:inline">
+                          {bin.template_id.replace("samla_", "").replace("gal", " gal")}
+                        </span>
+                      )}
+                      {count > 0 && (
+                        <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">
+                          {count}
+                        </span>
+                      )}
+                      {bin.nfc_tag_id && <Nfc className="size-3 text-emerald-500" />}
+                      <Link
+                        href={`/storage/${bin.id}/add`}
+                        className="text-[11px] text-primary hover:text-primary/80 font-medium shrink-0"
+                      >
+                        + Item
+                      </Link>
+                    </div>
+                    {isExpanded && (
+                      <div className="bg-accent/20 border-t px-4 py-2">
+                        {loadingItems ? (
+                          <div className="text-[12px] text-muted-foreground py-2">Loading...</div>
+                        ) : expandedItems.length === 0 ? (
+                          <div className="text-[12px] text-muted-foreground py-2">
+                            Empty — <Link href={`/storage/${bin.id}/add`} className="text-primary">add items</Link>
+                          </div>
+                        ) : expandedItems.map((item: Record<string, unknown>) => (
+                          <div key={String(item.id)} className="flex items-center gap-2 py-1.5">
+                            <span className="text-[12px] font-medium flex-1 truncate">{String(item.product_name)}</span>
+                            {item.product_brand ? <span className="text-[10px] text-muted-foreground">{String(item.product_brand)}</span> : null}
+                            <span className="text-[10px] text-muted-foreground">qty: {String(item.quantity)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {bin.template_id && (
-                    <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded hidden sm:inline">
-                      {bin.template_id.replace("samla_", "").replace("gal", " gal")}
-                    </span>
-                  )}
-                  {(itemCounts[bin.id] ?? 0) > 0 && (
-                    <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">
-                      {itemCounts[bin.id]} items
-                    </span>
-                  )}
-                  {bin.nfc_tag_id && (
-                    <Nfc className="size-3 text-emerald-500" />
-                  )}
-                </Link>
-              ))}
+                )
+              })}
             </div>
           )}
 
           {/* All Shelves tab */}
           {tab === "shelves" && (
-            <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden divide-y">
+            <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
               {shelves.length === 0 ? (
                 <div className="p-8 text-center text-[13px] text-muted-foreground">
                   No shelves yet. Add shelves to your racks first.
                 </div>
               ) : shelves.map((shelf) => {
-                const binCount = getBinCount(shelf.id)
+                const shelfBins = locations.filter((l) => l.parent_id === shelf.id && l.unit_subtype === "bin")
+                const binCount = shelfBins.length
                 const deepItems = getDeepItemCount(shelf.id)
+                const isExpanded = expandedId === shelf.id
                 return (
-                  <Link
-                    key={shelf.id}
-                    href={`/storage/${shelf.id}`}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
-                  >
-                    <Minus className="size-4 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-medium truncate">{shelf.name}</div>
-                      <div className="text-[11px] text-muted-foreground">{getParentPath(shelf)}</div>
+                  <div key={shelf.id} className="border-b last:border-b-0">
+                    <div className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors">
+                      <button onClick={() => { setExpandedId(isExpanded ? null : shelf.id); setExpandedItems([]) }} className="shrink-0">
+                        {isExpanded ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
+                      </button>
+                      <Minus className="size-4 text-muted-foreground shrink-0" />
+                      <Link href={`/storage/${shelf.id}`} className="flex-1 min-w-0 hover:text-primary">
+                        <div className="text-[13px] font-medium truncate">{shelf.name}</div>
+                        <div className="text-[11px] text-muted-foreground">{getParentPath(shelf)}</div>
+                      </Link>
+                      {binCount > 0 && (
+                        <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
+                          {binCount} bins
+                        </span>
+                      )}
+                      {deepItems > 0 && (
+                        <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">
+                          {deepItems}
+                        </span>
+                      )}
+                      <Link
+                        href={`/storage/${shelf.id}`}
+                        className="text-[11px] text-primary hover:text-primary/80 font-medium shrink-0"
+                      >
+                        + Bin
+                      </Link>
                     </div>
-                    {binCount > 0 && (
-                      <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
-                        {binCount} bins
-                      </span>
+                    {isExpanded && (
+                      <div className="bg-accent/20 border-t">
+                        {shelfBins.length === 0 ? (
+                          <div className="px-4 py-2 text-[12px] text-muted-foreground">
+                            No bins — <Link href={`/storage/${shelf.id}`} className="text-primary">add bins</Link>
+                          </div>
+                        ) : shelfBins.map((bin) => {
+                          const binItems = itemCounts[bin.id] ?? 0
+                          return (
+                            <div key={bin.id} className="flex items-center gap-2 px-4 py-2 border-b border-accent/30 last:border-b-0">
+                              <Package className="size-3 text-muted-foreground shrink-0" />
+                              <Link href={`/storage/${bin.id}`} className="text-[12px] font-medium flex-1 truncate hover:text-primary">
+                                {bin.name}
+                              </Link>
+                              {bin.template_id && (
+                                <span className="text-[9px] text-muted-foreground bg-secondary/80 px-1 py-0.5 rounded">
+                                  {bin.template_id.replace("samla_", "").replace("gal", "g")}
+                                </span>
+                              )}
+                              {binItems > 0 && (
+                                <span className="text-[10px] text-muted-foreground">{binItems} items</span>
+                              )}
+                              {bin.nfc_tag_id && <Nfc className="size-2.5 text-emerald-500" />}
+                              <Link href={`/storage/${bin.id}/add`} className="text-[10px] text-primary font-medium">+ Item</Link>
+                            </div>
+                          )
+                        })}
+                      </div>
                     )}
-                    {deepItems > 0 && (
-                      <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">
-                        {deepItems} items
-                      </span>
-                    )}
-                  </Link>
+                  </div>
                 )
               })}
             </div>
