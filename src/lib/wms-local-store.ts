@@ -110,7 +110,7 @@ export function createLocation(input: CreateLocationInput): Location {
 
 export function updateLocation(
   id: string,
-  updates: Partial<Pick<Location, 'name' | 'label' | 'unit_subtype' | 'width_in' | 'depth_in' | 'height_in' | 'nfc_tag_id' | 'metadata' | 'sort_order' | 'is_archived'>>,
+  updates: Partial<Pick<Location, 'name' | 'label' | 'unit_subtype' | 'template_id' | 'width_in' | 'depth_in' | 'height_in' | 'nfc_tag_id' | 'metadata' | 'sort_order' | 'is_archived'>>,
 ): void {
   const locations = get<Location>(KEYS.locations)
   const idx = locations.findIndex((l) => l.id === id)

@@ -3,7 +3,17 @@
 import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ChevronRight, Plus, Trash2, Package, Nfc, Trash, Pencil, Check, X } from "lucide-react"
+import { ChevronRight, Plus, Trash2, Package, Nfc, Trash, Pencil, Check, X, ChevronDown } from "lucide-react"
+import { SAMLA_BINS } from "@/lib/wms-constants"
+
+const SAMLA_OPTIONS = SAMLA_BINS.map((bin) => ({
+  id: bin.id,
+  name: `${bin.name} (${bin.volumeGal} gal)`,
+  subtitle: `${bin.widthIn}" × ${bin.depthIn}" × ${bin.heightIn}"`,
+  widthIn: bin.widthIn,
+  depthIn: bin.depthIn,
+  heightIn: bin.heightIn,
+}))
 import { useAuth } from "@/components/auth-provider"
 import { useStore } from "@/hooks/use-store"
 import { buildLocationTree } from "@/lib/wms-local-store"
@@ -50,6 +60,8 @@ export default function LocationDetailPage() {
   const [editWidth, setEditWidth] = useState("")
   const [editDepth, setEditDepth] = useState("")
   const [editHeight, setEditHeight] = useState("")
+  const [editBinTemplate, setEditBinTemplate] = useState<string | null>(null)
+  const [showBinPicker, setShowBinPicker] = useState(false)
 
   const loadData = useCallback(async () => {
     if (authLoading) return
@@ -140,16 +152,20 @@ export default function LocationDetailPage() {
     setEditWidth(location.width_in?.toString() ?? "")
     setEditDepth(location.depth_in?.toString() ?? "")
     setEditHeight(location.height_in?.toString() ?? "")
+    setEditBinTemplate(location.template_id)
+    setShowBinPicker(false)
     setEditingDetails(true)
   }
 
   const saveDetails = async () => {
+    const bin = editBinTemplate ? SAMLA_OPTIONS.find((b) => b.id === editBinTemplate) : null
     await store.updateLocation(locationId, {
       name: editName.trim() || location!.name,
       label: editLabel.trim() || null,
-      width_in: editWidth ? parseFloat(editWidth) : null,
-      depth_in: editDepth ? parseFloat(editDepth) : null,
-      height_in: editHeight ? parseFloat(editHeight) : null,
+      template_id: editBinTemplate,
+      width_in: bin?.widthIn ?? (editWidth ? parseFloat(editWidth) : null),
+      depth_in: bin?.depthIn ?? (editDepth ? parseFloat(editDepth) : null),
+      height_in: bin?.heightIn ?? (editHeight ? parseFloat(editHeight) : null),
     })
     setEditingDetails(false)
     await loadData()
@@ -201,6 +217,67 @@ export default function LocationDetailPage() {
                   autoFocus
                 />
               </div>
+
+              {/* Bin template picker — only for bins */}
+              {location.unit_subtype === "bin" && (
+                <div>
+                  <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Bin Type</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowBinPicker(!showBinPicker)}
+                    className="w-full max-w-xs flex items-center justify-between gap-2 rounded-lg border bg-background px-3 py-2 text-[13px] hover:bg-accent transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Package className="size-3.5 text-muted-foreground" />
+                      {editBinTemplate
+                        ? SAMLA_OPTIONS.find((b) => b.id === editBinTemplate)?.name ?? "Unknown"
+                        : "Custom bin"}
+                    </span>
+                    <ChevronDown className={`size-3.5 text-muted-foreground transition-transform ${showBinPicker ? "rotate-180" : ""}`} />
+                  </button>
+                  {showBinPicker && (
+                    <div className="mt-1.5 rounded-lg border bg-card shadow-md shadow-black/[0.08] overflow-hidden max-w-xs">
+                      {SAMLA_OPTIONS.map((bin) => (
+                        <button
+                          key={bin.id}
+                          onClick={() => {
+                            setEditBinTemplate(bin.id)
+                            setEditWidth(bin.widthIn.toString())
+                            setEditDepth(bin.depthIn.toString())
+                            setEditHeight(bin.heightIn.toString())
+                            setShowBinPicker(false)
+                          }}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent transition-colors ${
+                            editBinTemplate === bin.id ? "bg-primary/5" : ""
+                          }`}
+                        >
+                          <Package className={`size-3.5 shrink-0 ${editBinTemplate === bin.id ? "text-primary" : "text-muted-foreground"}`} />
+                          <div>
+                            <div className="text-[12px] font-medium">{bin.name}</div>
+                            <div className="text-[10px] text-muted-foreground">{bin.subtitle}</div>
+                          </div>
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => {
+                          setEditBinTemplate(null)
+                          setShowBinPicker(false)
+                        }}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent border-t transition-colors ${
+                          editBinTemplate === null ? "bg-primary/5" : ""
+                        }`}
+                      >
+                        <Package className={`size-3.5 shrink-0 ${editBinTemplate === null ? "text-primary" : "text-muted-foreground"}`} />
+                        <div>
+                          <div className="text-[12px] font-medium">Custom bin or box</div>
+                          <div className="text-[10px] text-muted-foreground">Enter dimensions manually</div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Short Label</label>
                 <input
@@ -211,41 +288,44 @@ export default function LocationDetailPage() {
                   className="rounded-lg border bg-background px-3 py-1.5 text-[13px] font-mono w-40"
                 />
               </div>
-              <div className="flex gap-3">
-                <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Width (in)</label>
-                  <input
-                    type="number"
-                    step="0.25"
-                    value={editWidth}
-                    onChange={(e) => setEditWidth(e.target.value)}
-                    placeholder="—"
-                    className="rounded-lg border bg-background px-3 py-1.5 text-[13px] w-24"
-                  />
+              {/* Dimensions — hidden when a SAMLA template is selected */}
+              {!(location.unit_subtype === "bin" && editBinTemplate) && (
+                <div className="flex gap-3">
+                  <div>
+                    <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Width (in)</label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      value={editWidth}
+                      onChange={(e) => setEditWidth(e.target.value)}
+                      placeholder="—"
+                      className="rounded-lg border bg-background px-3 py-1.5 text-[13px] w-24"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Depth (in)</label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      value={editDepth}
+                      onChange={(e) => setEditDepth(e.target.value)}
+                      placeholder="—"
+                      className="rounded-lg border bg-background px-3 py-1.5 text-[13px] w-24"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Height (in)</label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      value={editHeight}
+                      onChange={(e) => setEditHeight(e.target.value)}
+                      placeholder="—"
+                      className="rounded-lg border bg-background px-3 py-1.5 text-[13px] w-24"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Depth (in)</label>
-                  <input
-                    type="number"
-                    step="0.25"
-                    value={editDepth}
-                    onChange={(e) => setEditDepth(e.target.value)}
-                    placeholder="—"
-                    className="rounded-lg border bg-background px-3 py-1.5 text-[13px] w-24"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Height (in)</label>
-                  <input
-                    type="number"
-                    step="0.25"
-                    value={editHeight}
-                    onChange={(e) => setEditHeight(e.target.value)}
-                    placeholder="—"
-                    className="rounded-lg border bg-background px-3 py-1.5 text-[13px] w-24"
-                  />
-                </div>
-              </div>
+              )}
               <div className="flex gap-2">
                 <button
                   onClick={saveDetails}
