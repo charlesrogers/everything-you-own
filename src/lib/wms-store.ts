@@ -102,6 +102,22 @@ export async function updateLocation(
   if (error) throw error
 }
 
+// One-time migration: swap width/depth on samla_3gal and samla_6gal bins
+// These were stored with widthIn=15.25, depthIn=11 but correct shelf orientation is 11 across, 15.25 deep
+export async function migrateSamlaOrientation(sb: Client, householdId: string): Promise<void> {
+  const { data: bins } = await sb
+    .from('locations')
+    .select('id, width_in, depth_in')
+    .eq('household_id', householdId)
+    .in('template_id', ['samla_3gal', 'samla_6gal'])
+    .eq('width_in', 15.25)
+    .eq('depth_in', 11)
+  if (!bins || bins.length === 0) return
+  for (const bin of bins) {
+    await sb.from('locations').update({ width_in: 11, depth_in: 15.25 }).eq('id', bin.id)
+  }
+}
+
 export async function deleteLocation(sb: Client, id: string): Promise<void> {
   const { error } = await sb.from('locations').delete().eq('id', id)
   if (error) throw error

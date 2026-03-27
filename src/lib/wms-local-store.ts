@@ -119,6 +119,28 @@ export function updateLocation(
   set(KEYS.locations, locations)
 }
 
+// One-time migration: swap width/depth on samla_3gal and samla_6gal bins
+// These were stored with widthIn=15.25, depthIn=11 but correct shelf orientation is 11 across, 15.25 deep
+export function migrateSamlaOrientation(): void {
+  const flag = 'eyo_wms_samla_orientation_fixed'
+  if (localStorage.getItem(flag)) return
+  const locations = get<Location>(KEYS.locations)
+  let changed = false
+  for (const loc of locations) {
+    if (
+      (loc.template_id === 'samla_3gal' || loc.template_id === 'samla_6gal') &&
+      loc.width_in === 15.25 && loc.depth_in === 11
+    ) {
+      loc.width_in = 11
+      loc.depth_in = 15.25
+      loc.updated_at = new Date().toISOString()
+      changed = true
+    }
+  }
+  if (changed) set(KEYS.locations, locations)
+  localStorage.setItem(flag, '1')
+}
+
 export function deleteLocation(id: string): void {
   let locations = get<Location>(KEYS.locations)
   // Recursively delete children

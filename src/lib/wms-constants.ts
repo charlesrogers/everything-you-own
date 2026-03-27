@@ -57,8 +57,8 @@ export const UNIT_SUBTYPE_CONFIG: Record<UnitSubtype, {
 
 export const SAMLA_BINS = [
   { id: 'samla_1gal',  name: 'SAMLA 1 gal',  widthIn: 11,    depthIn: 7.5,   heightIn: 5.5,  volumeGal: 1 },
-  { id: 'samla_3gal',  name: 'SAMLA 3 gal',  widthIn: 15.25, depthIn: 11,    heightIn: 5.5,  volumeGal: 3 },
-  { id: 'samla_6gal',  name: 'SAMLA 6 gal',  widthIn: 15.25, depthIn: 11,    heightIn: 11,   volumeGal: 6 },
+  { id: 'samla_3gal',  name: 'SAMLA 3 gal',  widthIn: 11,    depthIn: 15.25, heightIn: 5.5,  volumeGal: 3 },
+  { id: 'samla_6gal',  name: 'SAMLA 6 gal',  widthIn: 11,    depthIn: 15.25, heightIn: 11,   volumeGal: 6 },
   { id: 'samla_12gal', name: 'SAMLA 12 gal', widthIn: 22,    depthIn: 15.25, heightIn: 11,   volumeGal: 12 },
   { id: 'samla_15gal', name: 'SAMLA 15 gal', widthIn: 30.75, depthIn: 22,    heightIn: 7,    volumeGal: 15 },
   { id: 'samla_17gal', name: 'SAMLA 17 gal', widthIn: 22.5,  depthIn: 15.25, heightIn: 16.5, volumeGal: 17 },
@@ -69,7 +69,7 @@ export const SAMLA_BINS = [
 
 export const OMAR_RACK = {
   widthIn: 36.25,
-  depthIn: 14,
+  depthIn: 16,
   heightIn: 72,
   shelves: 6,
   shelfHeightIn: 11.5,
