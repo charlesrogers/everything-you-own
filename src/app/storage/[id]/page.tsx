@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { ChevronRight, Plus, Trash2, Package, Nfc, Trash, Pencil, Check, X, ChevronDown, Copy, ClipboardCheck } from "lucide-react"
 import { SAMLA_BINS } from "@/lib/wms-constants"
-import { ShelfOrganizer } from "@/components/shelf-organizer"
 
 const SAMLA_OPTIONS = SAMLA_BINS.map((bin) => ({
   id: bin.id,
@@ -316,25 +315,35 @@ export default function LocationDetailPage() {
               )}
 
               {/* Depth row — only for bins */}
-              {location.unit_subtype === "bin" && (
-                <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Shelf position</label>
-                  <div className="flex gap-2">
-                    {(["front", "back", "full"] as const).map((dr) => (
-                      <button
-                        key={dr}
-                        type="button"
-                        onClick={() => setEditDepthRow(dr)}
-                        className={`flex-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                          editDepthRow === dr ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
-                        }`}
-                      >
-                        {dr.charAt(0).toUpperCase() + dr.slice(1)}
-                      </button>
-                    ))}
+              {location.unit_subtype === "bin" && (() => {
+                const selBin = editBinTemplate ? SAMLA_BINS.find((b) => b.id === editBinTemplate) : null
+                const isFullDepth = selBin && parentDepthIn ? selBin.depthIn >= parentDepthIn * 0.85 : false
+                return (
+                  <div>
+                    <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Shelf position</label>
+                    {isFullDepth ? (
+                      <div className="rounded-lg border bg-secondary/50 px-3 py-1.5 text-[12px] font-medium text-muted-foreground">
+                        Full depth — bin spans the entire shelf
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        {(["front", "back"] as const).map((dr) => (
+                          <button
+                            key={dr}
+                            type="button"
+                            onClick={() => setEditDepthRow(dr)}
+                            className={`flex-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                              editDepthRow === dr ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                            }`}
+                          >
+                            {dr.charAt(0).toUpperCase() + dr.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               <div>
                 <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Short Label</label>
@@ -502,16 +511,6 @@ export default function LocationDetailPage() {
         </div>
       )}
 
-      {/* Shelf organizer — column-based drag layout for bins */}
-      {location.unit_subtype === "shelf" && childLocations.length > 0 && (
-        <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] p-4">
-          <ShelfOrganizer
-            shelf={{ ...location, children }}
-            itemCounts={itemCounts}
-            onMoveBin={handleMoveBinToCol}
-          />
-        </div>
-      )}
 
       {/* Sub-locations */}
       <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">

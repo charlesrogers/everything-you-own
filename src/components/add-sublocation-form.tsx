@@ -433,47 +433,48 @@ export function AddSublocationForm({
         </div>
 
         {/* Front/Back/Full row — only for bins */}
-        {isBin && (
-          <div>
-            <label className="text-[12px] font-medium text-muted-foreground mb-1.5 block">
-              Shelf position
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setDepthRow("front")}
-                className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
-                  depthRow === "front" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
-                }`}
-              >
-                Front
-              </button>
-              <button
-                type="button"
-                onClick={() => setDepthRow("back")}
-                className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
-                  depthRow === "back" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
-                }`}
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={() => setDepthRow("full")}
-                className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
-                  depthRow === "full" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
-                }`}
-              >
-                Full
-              </button>
+        {isBin && (() => {
+          const selBin = selectedBinTemplate ? SAMLA_BINS.find((b) => b.id === selectedBinTemplate) : null
+          const isFullDepth = selBin && parentDepthIn ? selBin.depthIn >= parentDepthIn * 0.85 : false
+          return (
+            <div>
+              <label className="text-[12px] font-medium text-muted-foreground mb-1.5 block">
+                Shelf position
+              </label>
+              {isFullDepth ? (
+                <div className="rounded-lg border bg-secondary/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
+                  Full depth — bin spans the entire shelf
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDepthRow("front")}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                      depthRow === "front" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                    }`}
+                  >
+                    Front
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDepthRow("back")}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                      depthRow === "back" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                    }`}
+                  >
+                    Back
+                  </button>
+                </div>
+              )}
+              {!isFullDepth && (
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Half-depth bins can sit front-to-back on the same shelf
+                </p>
+              )}
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">
-              {depthRow === "full"
-                ? "Bin spans the full depth of the shelf"
-                : "Half-depth bins can sit front-to-back on the same shelf"}
-            </p>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Short label */}
         <div>
