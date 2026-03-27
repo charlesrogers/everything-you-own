@@ -98,6 +98,11 @@ export default function LocationDetailPage() {
       setContents(items)
       setItemCounts(counts)
       setShelfItemsByPosition(data.shelfItemsByPosition ?? {})
+      // Store parent's depth for bin depth-row auto-select
+      if (loc.parent_id) {
+        const parent = locMap.get(loc.parent_id) as Location | undefined
+        setParentDepthIn(parent?.depth_in ?? null)
+      }
 
       const kids = allLocs.filter((l: Location) => l.parent_id === locationId)
       setChildLocations(kids)
@@ -179,6 +184,8 @@ export default function LocationDetailPage() {
     setEditHeight(location.height_in?.toString() ?? "")
     setEditBinTemplate(location.template_id)
     setShowBinPicker(false)
+    const dr = (location.metadata as Record<string, unknown>)?.depth_row as string | undefined
+    setEditDepthRow(dr === "back" ? "back" : dr === "full" ? "full" : "front")
     setEditingDetails(true)
   }
 
