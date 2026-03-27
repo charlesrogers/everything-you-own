@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { ChevronDown, ChevronRight, Star, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -55,6 +55,7 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
   const [brand, setBrand] = useState(product?.brand || "")
   const [categoryId, setCategoryId] = useState(product?.category_id || "")
   const [subcategoryId, setSubcategoryId] = useState(product?.subcategory_id || "")
+  const [quantity, setQuantity] = useState("1")
   const [price, setPrice] = useState(product?.price?.toString() || "")
   const [status, setStatus] = useState<ProductStatus>(product?.status || "purchased")
   const [imageUrl, setImageUrl] = useState(product?.image_url || "")
@@ -92,6 +93,7 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
       ])
       setCategories(cats)
       setSubcategories(subs)
+      // Don't auto-select — only name is required
     }
     load()
   }, [store])
@@ -121,8 +123,38 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
     }
   }, [store, name, brand, sku, sourceUrl, product?.id, duplicateChecked])
 
+  const addAnotherRef = useRef(false)
+  const [saving, setSaving] = useState(false)
+
+  function resetForm() {
+    setName("")
+    setBrand("")
+    setPrice("")
+    setQuantity("1")
+    setImageUrl("")
+    setThumbUrl("")
+    setRetailer("")
+    setSourceUrl("")
+    setPurchaseDate("")
+    setSku("")
+    setDescription("")
+    setOriginalPrice("")
+    setRating(0)
+    setMaterial("")
+    setColor("")
+    setSize("")
+    setReturnByDate("")
+    setWarrantyExpires("")
+    setOrderId("")
+    setNotes("")
+    setTagsInput("")
+    setDuplicateChecked(false)
+    setDuplicates(null)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setSaving(true)
 
     const tags = tagsInput
       .split(",")
@@ -168,7 +200,14 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
     if (mode === "create") {
       const newProduct = await store.addProduct(data)
       if (assignToLocationId) {
-        await store.addProductToLocation({ product_id: newProduct.id, location_id: assignToLocationId })
+        const qty = parseInt(quantity) || 1
+        await store.addProductToLocation({ product_id: newProduct.id, location_id: assignToLocationId, quantity: qty })
+        if (addAnotherRef.current) {
+          resetForm()
+          setSaving(false)
+          addAnotherRef.current = false
+          return
+        }
         router.push(`/storage/${assignToLocationId}`)
       } else {
         router.push(`/products/${newProduct.id}`)
@@ -243,8 +282,8 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-[13px]">Category *</Label>
-                <Select value={categoryId} onValueChange={(v) => v && setCategoryId(v)} required>
+                <Label className="text-[13px]">Category</Label>
+                <Select value={categoryId} onValueChange={(v) => v && setCategoryId(v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select category">
                       {categories.find((c) => c.id === categoryId)?.name}
@@ -260,8 +299,8 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[13px]">Subcategory *</Label>
-                <Select value={subcategoryId} onValueChange={(v) => v && setSubcategoryId(v)} required>
+                <Label className="text-[13px]">Subcategory</Label>
+                <Select value={subcategoryId} onValueChange={(v) => v && setSubcategoryId(v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select subcategory">
                       {filteredSubs.find((s) => s.id === subcategoryId)?.name}
@@ -579,9 +618,23 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
         </div>
 
         <div className="flex gap-3 pt-4 border-t">
-          <Button type="submit" className="flex-1 sm:flex-none">
-            {mode === "create" ? "Add Product" : "Save Changes"}
+          <Button type="submit" className="flex-1 sm:flex-none" disabled={saving}>
+            {saving ? "Saving…" : mode === "create" ? "Save" : "Save Changes"}
           </Button>
+          {mode === "create" && assignToLocationId && (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={saving}
+              onClick={(e) => {
+                addAnotherRef.current = true
+                const form = (e.target as HTMLElement).closest("form")
+                if (form) form.requestSubmit()
+              }}
+            >
+              Save & Add Another
+            </Button>
+          )}
           <Button type="button" variant="outline" onClick={() => router.back()}>
             Cancel
           </Button>
