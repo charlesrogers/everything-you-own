@@ -119,6 +119,20 @@ export default function LocationDetailPage() {
     }
   }
 
+  const handleReorderShelves = async (shelfIds: string[]) => {
+    for (let i = 0; i < shelfIds.length; i++) {
+      await store.updateLocation(shelfIds[i], { sort_order: i })
+    }
+    await loadData()
+  }
+
+  const handleReorderBins = async (shelfId: string, binIds: string[]) => {
+    for (let i = 0; i < binIds.length; i++) {
+      await store.updateLocation(binIds[i], { sort_order: i })
+    }
+    await loadData()
+  }
+
   const startEditing = () => {
     if (!location) return
     setEditName(location.name)
@@ -323,7 +337,12 @@ export default function LocationDetailPage() {
       {location.unit_subtype === "rack" && children.length > 0 && (
         <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] p-4 flex justify-center">
           <div className="w-full max-w-md">
-            <RackVisualization rack={{ ...location, children }} itemCounts={itemCounts} />
+            <RackVisualization
+              rack={{ ...location, children }}
+              itemCounts={itemCounts}
+              onReorderShelves={handleReorderShelves}
+              onReorderBins={handleReorderBins}
+            />
           </div>
         </div>
       )}
