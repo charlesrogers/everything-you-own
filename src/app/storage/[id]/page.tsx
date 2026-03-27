@@ -28,7 +28,7 @@ import { LocationTree } from "@/components/location-tree"
 import { AddSublocationForm } from "@/components/add-sublocation-form"
 import { RackVisualization } from "@/components/rack-visualization"
 import { RoomVisualization } from "@/components/room-visualization"
-import { ShelfOrganizer } from "@/components/shelf-organizer" // eslint-disable-line @typescript-eslint/no-unused-vars
+import { ShelfOrganizer } from "@/components/shelf-organizer"
 
 function getAllDescendants(parentId: string, allLocs: import("@/lib/wms-types").Location[]): import("@/lib/wms-types").Location[] {
   const directKids = allLocs.filter((l) => l.parent_id === parentId)
