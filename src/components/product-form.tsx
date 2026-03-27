@@ -260,7 +260,7 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="brand" className="text-[13px]">Brand</Label>
                 <Input
@@ -281,6 +281,16 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="quantity" className="text-[13px]">Qty</Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
                 />
               </div>
             </div>
