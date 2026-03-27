@@ -14,107 +14,109 @@ interface ShelfOrganizerProps {
 
 type DepthRow = "front" | "back"
 
-interface BinPlacement {
-  bin: LocationTreeNode
-  col: number
-  row: DepthRow
-  stackOrder: number
-}
-
 export function ShelfOrganizer({ shelf, itemCounts, onMoveBin }: ShelfOrganizerProps) {
   const shelfDims = getEffectiveDimensions(shelf)
-  const shelfWidth = shelfDims.width ?? 36.25
+  const shelfWidth = shelfDims.width ?? 36
   const shelfDepth = shelfDims.depth ?? 14
   const shelfHeight = shelfDims.height ?? 11.5
 
   const allBins = shelf.children
     .filter((c) => c.unit_subtype === "bin" || c.location_type === "compartment")
 
-  // Determine number of columns from shelf width and typical bin width
-  // Use the most common bin width, or default ~15" (SAMLA standard)
-  const typicalBinWidth = useMemo(() => {
-    const widths = allBins.map((b) => getEffectiveDimensions(b).width).filter((w): w is number => w != null && w > 0)
-    if (widths.length === 0) return 15.25
-    // Most common width
-    const freq = new Map<number, number>()
-    for (const w of widths) freq.set(w, (freq.get(w) ?? 0) + 1)
-    return [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0]
-  }, [allBins])
+  // Use a sub-grid with 1 unit per inch for precise placement
+  const gridCols = Math.round(shelfWidth)
 
-  const numColumns = Math.max(1, Math.floor(shelfWidth / typicalBinWidth))
-
-  // Can bins go front/back? Only if shelf is deep enough for two rows
-  const typicalBinDepth = useMemo(() => {
+  // Can bins go front/back?
+  const minBinDepth = useMemo(() => {
     const depths = allBins.map((b) => getEffectiveDimensions(b).depth).filter((d): d is number => d != null && d > 0)
-    if (depths.length === 0) return shelfDepth
-    return Math.min(...depths)
+    return depths.length > 0 ? Math.min(...depths) : shelfDepth
   }, [allBins, shelfDepth])
-  const canDoFrontBack = shelfDepth >= typicalBinDepth * 1.8 // room for ~2 bins deep
+  const canDoFrontBack = shelfDepth >= minBinDepth * 1.8
 
-  // Build placements
-  const placements = useMemo(() => {
-    return allBins.map((bin): BinPlacement => {
-      const meta = bin.metadata as Record<string, unknown>
-      const col = (meta?.col_index as number) ?? 0
-      const row: DepthRow = (meta?.depth_row as DepthRow) ?? "front"
-      return { bin, col: Math.min(col, numColumns - 1), row, stackOrder: bin.sort_order }
-    })
-  }, [allBins, numColumns])
+  // Build bin placements with grid positions
+  const getBinPlacement = (bin: LocationTreeNode) => {
+    const meta = bin.metadata as Record<string, unknown>
+    const colStart = (meta?.col_index as number) ?? 0  // starting column in inches
+    const row: DepthRow = (meta?.depth_row as DepthRow) ?? "front"
+    const dims = getEffectiveDimensions(bin)
+    const widthCols = Math.round(dims.width ?? 11)  // how many grid columns it spans
+    return { bin, colStart: Math.min(colStart, gridCols - widthCols), row, widthCols, stackOrder: bin.sort_order }
+  }
+
+  const placements = useMemo(() => allBins.map(getBinPlacement), [allBins, gridCols])
 
   // Drag state
   const [dragBinId, setDragBinId] = useState<string | null>(null)
-  const [dragOverTarget, setDragOverTarget] = useState<{ col: number; row: DepthRow } | null>(null)
+  const [dragOverSlot, setDragOverSlot] = useState<{ col: number; row: DepthRow } | null>(null)
 
   const handleDrop = async (col: number, row: DepthRow) => {
     if (!dragBinId) return
-    const existingInSlot = placements.filter((p) => p.col === col && p.row === row)
-    await onMoveBin(dragBinId, col, existingInSlot.length, row)
+    const existing = placements.filter((p) => p.row === row && p.colStart === col)
+    await onMoveBin(dragBinId, col, existing.length, row)
     setDragBinId(null)
-    setDragOverTarget(null)
+    setDragOverSlot(null)
   }
 
-  // Render a single cell (one column + one depth row)
-  function renderCell(col: number, row: DepthRow) {
-    const cellBins = placements
-      .filter((p) => p.col === col && p.row === row)
-      .sort((a, b) => a.stackOrder - b.stackOrder)
-    const isDropTarget = dragOverTarget?.col === col && dragOverTarget?.row === row
+  function renderRow(row: DepthRow) {
+    const rowBins = placements.filter((p) => p.row === row)
 
     return (
       <div
-        key={`${col}-${row}`}
-        className={`flex flex-col-reverse gap-1 rounded-lg border-2 border-dashed p-1.5 min-h-[60px] transition-colors ${
-          isDropTarget
-            ? "border-primary bg-primary/5"
-            : cellBins.length > 0
-            ? "border-border bg-secondary/20"
-            : "border-muted-foreground/10 bg-muted/5"
-        }`}
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverTarget({ col, row }) }}
-        onDrop={(e) => { e.preventDefault(); handleDrop(col, row) }}
-        onDragLeave={() => setDragOverTarget(null)}
+        className="relative border-2 border-dashed border-border rounded-lg"
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+          minHeight: "70px",
+          gap: "2px",
+          padding: "4px",
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = "move"
+          // Calculate which column based on mouse position
+          const rect = e.currentTarget.getBoundingClientRect()
+          const x = e.clientX - rect.left
+          const col = Math.floor((x / rect.width) * gridCols)
+          setDragOverSlot({ col: Math.max(0, Math.min(col, gridCols - 1)), row })
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          if (dragOverSlot && dragOverSlot.row === row) {
+            handleDrop(dragOverSlot.col, row)
+          }
+        }}
+        onDragLeave={() => setDragOverSlot(null)}
       >
-        {cellBins.length === 0 && !isDropTarget && (
-          <div className="flex-1 flex items-center justify-center text-[9px] text-muted-foreground/30">
-            empty
-          </div>
+        {/* Drop indicator */}
+        {dragOverSlot && dragOverSlot.row === row && dragBinId && (
+          <div
+            className="absolute top-0 bottom-0 bg-primary/10 border-2 border-primary/30 rounded pointer-events-none z-0"
+            style={{
+              gridColumn: `${dragOverSlot.col + 1} / span ${Math.round(getEffectiveDimensions(allBins.find((b) => b.id === dragBinId)!)?.width ?? 11)}`,
+              left: `${(dragOverSlot.col / gridCols) * 100}%`,
+              width: `${((getEffectiveDimensions(allBins.find((b) => b.id === dragBinId)!)?.width ?? 11) / gridCols) * 100}%`,
+            }}
+          />
         )}
-        {cellBins.map((p) => {
-          const binDims = getEffectiveDimensions(p.bin)
+
+        {/* Bins */}
+        {rowBins.map((p) => {
           const binItems = itemCounts[p.bin.id] ?? 0
           const isDragging = dragBinId === p.bin.id
+          const dims = getEffectiveDimensions(p.bin)
 
           return (
             <div
               key={p.bin.id}
               draggable
               onDragStart={() => setDragBinId(p.bin.id)}
-              onDragEnd={() => { setDragBinId(null); setDragOverTarget(null) }}
-              className={`rounded-md border px-2 py-1.5 cursor-grab active:cursor-grabbing transition-all ${
+              onDragEnd={() => { setDragBinId(null); setDragOverSlot(null) }}
+              className={`rounded-md border px-2 py-1.5 cursor-grab active:cursor-grabbing z-10 transition-opacity ${
                 isDragging ? "opacity-20" : ""
-              } ${
-                binItems > 0 ? "bg-primary/8 border-primary/20" : "bg-card border-border"
-              }`}
+              } ${binItems > 0 ? "bg-primary/8 border-primary/20" : "bg-card border-border"}`}
+              style={{
+                gridColumn: `${p.colStart + 1} / span ${p.widthCols}`,
+              }}
             >
               <div className="flex items-center gap-1.5">
                 <GripVertical className="size-3 text-muted-foreground/40 shrink-0" />
@@ -128,11 +130,9 @@ export function ShelfOrganizer({ shelf, itemCounts, onMoveBin }: ShelfOrganizerP
                 {p.bin.nfc_tag_id && <Nfc className="size-2.5 text-emerald-500 shrink-0" />}
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
-                {binDims.width && binDims.height && (
-                  <span className="text-[9px] text-muted-foreground">
-                    {binDims.width}&Prime;&times;{binDims.depth}&Prime;&times;{binDims.height}&Prime;
-                  </span>
-                )}
+                <span className="text-[9px] text-muted-foreground">
+                  {dims.width}&Prime;w
+                </span>
                 {binItems > 0 && (
                   <span className="text-[9px] text-muted-foreground">{binItems} items</span>
                 )}
@@ -140,47 +140,57 @@ export function ShelfOrganizer({ shelf, itemCounts, onMoveBin }: ShelfOrganizerP
             </div>
           )
         })}
+
+        {/* Empty state */}
+        {rowBins.length === 0 && (
+          <div
+            className="flex items-center justify-center text-[10px] text-muted-foreground/30"
+            style={{ gridColumn: `1 / -1` }}
+          >
+            {canDoFrontBack ? `${row} row — drop bins here` : "drop bins here"}
+          </div>
+        )}
       </div>
     )
   }
+
+  // Ruler marks
+  const rulerMarks = Array.from({ length: Math.floor(shelfWidth / 6) + 1 }, (_, i) => i * 6)
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-[13px] font-semibold">Shelf Layout</h3>
         <span className="text-[11px] text-muted-foreground">
-          {shelfWidth}&Prime; &times; {shelfDepth}&Prime; &times; {shelfHeight}&Prime;
-          &middot; {numColumns} col{numColumns !== 1 ? "s" : ""}
+          {shelfWidth}&Prime; wide &middot; {shelfDepth}&Prime; deep &middot; {shelfHeight}&Prime; tall
           {canDoFrontBack && " &middot; front/back"}
         </span>
       </div>
 
-      {/* Grid: columns × depth rows */}
+      {/* Ruler */}
+      <div className="relative h-4 border-b border-muted-foreground/20">
+        {rulerMarks.map((inch) => (
+          <div
+            key={inch}
+            className="absolute bottom-0 flex flex-col items-center"
+            style={{ left: `${(inch / shelfWidth) * 100}%` }}
+          >
+            <span className="text-[8px] text-muted-foreground/40">{inch}&Prime;</span>
+            <div className="w-px h-1.5 bg-muted-foreground/20" />
+          </div>
+        ))}
+      </div>
+
       <div className="space-y-2">
         {canDoFrontBack && (
-          <div className="text-[10px] text-muted-foreground font-medium px-1">Back row</div>
+          <div className="text-[10px] text-muted-foreground font-medium">Back</div>
         )}
-        {canDoFrontBack && (
-          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${numColumns}, 1fr)` }}>
-            {Array.from({ length: numColumns }, (_, col) => renderCell(col, "back"))}
-          </div>
-        )}
+        {canDoFrontBack && renderRow("back")}
 
         {canDoFrontBack && (
-          <div className="text-[10px] text-muted-foreground font-medium px-1">Front row</div>
+          <div className="text-[10px] text-muted-foreground font-medium">Front</div>
         )}
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${numColumns}, 1fr)` }}>
-          {Array.from({ length: numColumns }, (_, col) => renderCell(col, "front"))}
-        </div>
-
-        {/* Column labels */}
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${numColumns}, 1fr)` }}>
-          {Array.from({ length: numColumns }, (_, col) => (
-            <div key={col} className="text-[9px] text-muted-foreground/50 text-center">
-              Col {col + 1} (~{Math.round(shelfWidth / numColumns)}&Prime;)
-            </div>
-          ))}
-        </div>
+        {renderRow("front")}
       </div>
     </div>
   )
