@@ -442,8 +442,8 @@ export default function LocationDetailPage() {
         <div className="flex items-center gap-2">
           {location.short_id && (
             <button
-              onClick={() => {
-                const url = `${window.location.origin}/s/${location.short_id}`
+              onClick={async () => {
+                const url = `${window.location.host}/s/${location.short_id}`
                 if (navigator.clipboard?.writeText) {
                   navigator.clipboard.writeText(url).catch(() => {
                     const ta = document.createElement("textarea")
@@ -457,6 +457,10 @@ export default function LocationDetailPage() {
                 }
                 setCopiedNfc(true)
                 setTimeout(() => setCopiedNfc(false), 2000)
+                if (!location.nfc_tag_id) {
+                  await store.updateLocation(locationId, { nfc_tag_id: location.short_id })
+                  await loadData()
+                }
               }}
               className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${
                 copiedNfc

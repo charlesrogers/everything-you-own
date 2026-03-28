@@ -141,9 +141,9 @@ export default function StoragePage() {
     setLoadingItems(false)
   }
 
-  function copyNfcUrl(loc: Location) {
+  async function copyNfcUrl(loc: Location) {
     if (!loc.short_id) return
-    const url = `${window.location.origin}/s/${loc.short_id}`
+    const url = `${window.location.host}/s/${loc.short_id}`
     // navigator.clipboard requires HTTPS; fall back to execCommand on HTTP
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(url).catch(() => fallbackCopy(url))
@@ -152,6 +152,11 @@ export default function StoragePage() {
     }
     setCopiedId(loc.id)
     setTimeout(() => setCopiedId(null), 2000)
+    // Auto-mark as NFC tagged
+    if (!loc.nfc_tag_id) {
+      await store.updateLocation(loc.id, { nfc_tag_id: loc.short_id })
+      await reloadData()
+    }
   }
 
   function fallbackCopy(text: string) {
@@ -364,9 +369,9 @@ export default function StoragePage() {
                         <button
                           onClick={(e) => { e.stopPropagation(); copyNfcUrl(bin) }}
                           title={copiedId === bin.id ? "Copied!" : "Copy NFC URL"}
-                          className="shrink-0"
+                          className="shrink-0 p-1.5 -m-1.5 rounded-lg hover:bg-accent/50 active:bg-accent"
                         >
-                          <Nfc className={`size-3.5 transition-colors ${
+                          <Nfc className={`size-4 transition-colors ${
                             copiedId === bin.id ? "text-emerald-500"
                             : bin.nfc_tag_id ? "text-emerald-500"
                             : "text-muted-foreground/30 hover:text-muted-foreground"
