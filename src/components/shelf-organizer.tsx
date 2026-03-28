@@ -48,32 +48,99 @@ export function ShelfOrganizer({ shelf, itemCounts, onMoveBin }: ShelfOrganizerP
   }, [allBins, shelfDepth])
   const canDoFrontBack = shelfDepth >= minBinDepth * 1.8
 
-  // Build grid placements — convert raw col_index (inches) to grid coords
-  const gridBins = useMemo(() => allBins.map((bin): BinGrid => {
-    const meta = bin.metadata as Record<string, unknown>
-    const dims = getEffectiveDimensions(bin)
-    const widthIn = dims.width ?? SLOT_W
-    const heightIn = dims.height ?? SLOT_H
-    const spanW = Math.max(1, Math.round(widthIn / SLOT_W))
-    const spanH = Math.max(1, Math.round(heightIn / SLOT_H))
+  // Build grid placements — use explicit positions or auto-pack
+  const gridBins = useMemo(() => {
+    // First pass: collect bins with known positions and unknown positions
+    const withPos: BinGrid[] = []
+    const needsPos: { bin: LocationTreeNode; spanW: number; spanH: number; depthRow: DepthRow; widthIn: number; heightIn: number }[] = []
 
-    // Use grid_col/grid_row if set, otherwise convert from legacy col_index
-    let gridCol = meta?.grid_col as number | undefined
-    let gridRow = meta?.grid_row as number | undefined
-    if (gridCol == null) {
-      const rawCol = (meta?.col_index as number) ?? 0
-      gridCol = Math.round(rawCol / SLOT_W)
+    for (const bin of allBins) {
+      const meta = bin.metadata as Record<string, unknown>
+      const dims = getEffectiveDimensions(bin)
+      const widthIn = dims.width ?? SLOT_W
+      const heightIn = dims.height ?? SLOT_H
+      const spanW = Math.max(1, Math.round(widthIn / SLOT_W))
+      const spanH = Math.max(1, Math.round(heightIn / SLOT_H))
+      const depthRow = ((meta?.depth_row as string) ?? "front") as DepthRow
+
+      const hasGridPos = meta?.grid_col != null && meta?.grid_row != null
+      const hasLegacyCol = meta?.col_index != null
+
+      if (hasGridPos) {
+        let gridCol = meta.grid_col as number
+        let gridRow = meta.grid_row as number
+        gridCol = Math.max(0, Math.min(gridCol, numCols - spanW))
+        gridRow = Math.max(0, Math.min(gridRow, numRows - spanH))
+        withPos.push({ bin, gridCol, gridRow, spanW, spanH, depthRow, widthIn, heightIn })
+      } else if (hasLegacyCol) {
+        const rawCol = meta.col_index as number
+        let gridCol = Math.round(rawCol / SLOT_W)
+        gridCol = Math.max(0, Math.min(gridCol, numCols - spanW))
+        withPos.push({ bin, gridCol, gridRow: 0, spanW, spanH, depthRow, widthIn, heightIn })
+      } else {
+        needsPos.push({ bin, spanW, spanH, depthRow, widthIn, heightIn })
+      }
     }
-    if (gridRow == null) gridRow = 0
 
-    // Clamp to shelf bounds
-    gridCol = Math.max(0, Math.min(gridCol, numCols - spanW))
-    gridRow = Math.max(0, Math.min(gridRow, numRows - spanH))
+    // Auto-pack bins without positions (Tetris: left-to-right, bottom-to-top)
+    // Build an occupancy grid per depth row
+    function autoPlace(bins: typeof needsPos, existingBins: BinGrid[], depthRow: "front" | "back"): BinGrid[] {
+      // Occupancy: occupied[row][col] = true
+      const occupied: boolean[][] = Array.from({ length: numRows }, () => Array(numCols).fill(false))
 
-    const depthRow = ((meta?.depth_row as string) ?? "front") as DepthRow
+      // Mark existing bins
+      for (const gb of existingBins) {
+        if (gb.depthRow !== depthRow && gb.depthRow !== "full") continue
+        for (let r = gb.gridRow; r < gb.gridRow + gb.spanH && r < numRows; r++) {
+          for (let c = gb.gridCol; c < gb.gridCol + gb.spanW && c < numCols; c++) {
+            occupied[r][c] = true
+          }
+        }
+      }
 
-    return { bin, gridCol, gridRow, spanW, spanH, depthRow, widthIn, heightIn }
-  }), [allBins, numCols, numRows])
+      const result: BinGrid[] = []
+      for (const b of bins) {
+        if (b.depthRow !== depthRow && b.depthRow !== "full") continue
+        let placed = false
+        // Scan bottom-to-top, left-to-right
+        for (let row = 0; row <= numRows - b.spanH && !placed; row++) {
+          for (let col = 0; col <= numCols - b.spanW && !placed; col++) {
+            // Check if all cells are free
+            let fits = true
+            for (let r = row; r < row + b.spanH && fits; r++) {
+              for (let c = col; c < col + b.spanW && fits; c++) {
+                if (occupied[r][c]) fits = false
+              }
+            }
+            if (fits) {
+              // Place it
+              for (let r = row; r < row + b.spanH; r++) {
+                for (let c = col; c < col + b.spanW; c++) {
+                  occupied[r][c] = true
+                }
+              }
+              result.push({ bin: b.bin, gridCol: col, gridRow: row, spanW: b.spanW, spanH: b.spanH, depthRow: b.depthRow, widthIn: b.widthIn, heightIn: b.heightIn })
+              placed = true
+            }
+          }
+        }
+        if (!placed) {
+          // Overflow — place at 0,0 anyway
+          result.push({ bin: b.bin, gridCol: 0, gridRow: 0, spanW: b.spanW, spanH: b.spanH, depthRow: b.depthRow, widthIn: b.widthIn, heightIn: b.heightIn })
+        }
+      }
+      return result
+    }
+
+    // For "full" depth bins, auto-place them in "front" row
+    const frontBins = needsPos.filter((b) => b.depthRow === "front" || b.depthRow === "full")
+    const backBins = needsPos.filter((b) => b.depthRow === "back")
+
+    const autoFront = autoPlace(frontBins, withPos, "front")
+    const autoBack = autoPlace(backBins, [...withPos, ...autoFront], "back")
+
+    return [...withPos, ...autoFront, ...autoBack]
+  }, [allBins, numCols, numRows])
 
   // Drag state
   const [dragBinId, setDragBinId] = useState<string | null>(null)
