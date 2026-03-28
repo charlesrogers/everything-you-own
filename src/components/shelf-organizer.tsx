@@ -6,21 +6,27 @@ import { GripVertical, Nfc } from "lucide-react"
 import type { LocationTreeNode } from "@/lib/wms-types"
 import { getEffectiveDimensions } from "@/lib/wms-dimensions"
 
+// Atomic unit: 1-gal SAMLA bin = 11" wide × 5.5" tall
+const SLOT_W = 11
+const SLOT_H = 5.5
+
 interface ShelfOrganizerProps {
   shelf: LocationTreeNode
   itemCounts: Record<string, number>
-  onMoveBin: (binId: string, colIndex: number, sortOrder: number, depthRow?: "front" | "back") => Promise<void>
+  onMoveBin: (binId: string, gridCol: number, gridRow: number, depthRow?: "front" | "back") => Promise<void>
 }
 
 type DepthRow = "front" | "back" | "full"
 
-interface BinPlacement {
+interface BinGrid {
   bin: LocationTreeNode
-  colStart: number  // starting position in inches from left
+  gridCol: number   // 0-indexed column
+  gridRow: number   // 0-indexed row from bottom
+  spanW: number     // columns wide
+  spanH: number     // rows tall
   depthRow: DepthRow
   widthIn: number
   heightIn: number
-  stackOrder: number
 }
 
 export function ShelfOrganizer({ shelf, itemCounts, onMoveBin }: ShelfOrganizerProps) {
@@ -28,6 +34,9 @@ export function ShelfOrganizer({ shelf, itemCounts, onMoveBin }: ShelfOrganizerP
   const shelfWidth = shelfDims.width ?? 36
   const shelfDepth = shelfDims.depth ?? 14
   const shelfHeight = shelfDims.height ?? 11.5
+
+  const numCols = Math.max(1, Math.floor(shelfWidth / SLOT_W))
+  const numRows = Math.max(1, Math.floor(shelfHeight / SLOT_H))
 
   const allBins = shelf.children
     .filter((c) => c.unit_subtype === "bin" || c.location_type === "compartment")
@@ -39,173 +48,186 @@ export function ShelfOrganizer({ shelf, itemCounts, onMoveBin }: ShelfOrganizerP
   }, [allBins, shelfDepth])
   const canDoFrontBack = shelfDepth >= minBinDepth * 1.8
 
-  // Typical bin width for column markers
-  const typicalBinWidth = useMemo(() => {
-    const widths = allBins.map((b) => getEffectiveDimensions(b).width).filter((w): w is number => w != null && w > 0)
-    if (widths.length === 0) return 15
-    const freq = new Map<number, number>()
-    for (const w of widths) freq.set(w, (freq.get(w) ?? 0) + 1)
-    return [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0]
-  }, [allBins])
-  const numLogicalCols = Math.max(1, Math.floor(shelfWidth / typicalBinWidth))
-
-  // Build placements
-  const placements = useMemo(() => allBins.map((bin): BinPlacement => {
+  // Build grid placements — convert raw col_index (inches) to grid coords
+  const gridBins = useMemo(() => allBins.map((bin): BinGrid => {
     const meta = bin.metadata as Record<string, unknown>
-    const colStart = (meta?.col_index as number) ?? 0
-    const depthRow = ((meta?.depth_row as string) ?? "front") as DepthRow
     const dims = getEffectiveDimensions(bin)
-    const widthIn = dims.width ?? 11
-    const heightIn = dims.height ?? 5.5
-    return {
-      bin,
-      colStart: Math.max(0, Math.min(colStart, shelfWidth - widthIn)),
-      depthRow,
-      widthIn,
-      heightIn,
-      stackOrder: bin.sort_order,
+    const widthIn = dims.width ?? SLOT_W
+    const heightIn = dims.height ?? SLOT_H
+    const spanW = Math.max(1, Math.round(widthIn / SLOT_W))
+    const spanH = Math.max(1, Math.round(heightIn / SLOT_H))
+
+    // Use grid_col/grid_row if set, otherwise convert from legacy col_index
+    let gridCol = meta?.grid_col as number | undefined
+    let gridRow = meta?.grid_row as number | undefined
+    if (gridCol == null) {
+      const rawCol = (meta?.col_index as number) ?? 0
+      gridCol = Math.round(rawCol / SLOT_W)
     }
-  }), [allBins, shelfWidth])
+    if (gridRow == null) gridRow = 0
+
+    // Clamp to shelf bounds
+    gridCol = Math.max(0, Math.min(gridCol, numCols - spanW))
+    gridRow = Math.max(0, Math.min(gridRow, numRows - spanH))
+
+    const depthRow = ((meta?.depth_row as string) ?? "front") as DepthRow
+
+    return { bin, gridCol, gridRow, spanW, spanH, depthRow, widthIn, heightIn }
+  }), [allBins, numCols, numRows])
 
   // Drag state
   const [dragBinId, setDragBinId] = useState<string | null>(null)
-  const [dragOverSlot, setDragOverSlot] = useState<{ col: number; row: "front" | "back" } | null>(null)
+  const [hoverCell, setHoverCell] = useState<{ col: number; row: number; depthRow: "front" | "back" } | null>(null)
 
-  const handleDrop = async (col: number, row: "front" | "back") => {
-    if (!dragBinId) return
-    const existing = placements.filter((p) =>
-      (p.depthRow === row || p.depthRow === "full") && Math.abs(p.colStart - col) < 2
-    )
-    await onMoveBin(dragBinId, col, existing.length, row)
-    setDragBinId(null)
-    setDragOverSlot(null)
-  }
-
-  // Group overlapping bins into stacks for a given depth row
-  function getStacks(row: "front" | "back"): BinPlacement[][] {
-    const rowBins = placements
-      .filter((p) => p.depthRow === row || p.depthRow === "full")
-      .sort((a, b) => a.colStart - b.colStart || a.stackOrder - b.stackOrder)
-
-    // Group bins that start at the same position (within 2" tolerance)
-    const stacks: BinPlacement[][] = []
-    for (const p of rowBins) {
-      const lastStack = stacks[stacks.length - 1]
-      if (lastStack && Math.abs(lastStack[0].colStart - p.colStart) < 2) {
-        lastStack.push(p)
-      } else {
-        stacks.push([p])
+  // Check if a cell range is occupied (excluding a specific bin)
+  function isOccupied(col: number, row: number, spanW: number, spanH: number, excludeBinId: string | null, depthRow: "front" | "back"): boolean {
+    for (const gb of gridBins) {
+      if (gb.bin.id === excludeBinId) continue
+      if (gb.depthRow !== depthRow && gb.depthRow !== "full") continue
+      // Check overlap
+      if (col < gb.gridCol + gb.spanW && col + spanW > gb.gridCol &&
+          row < gb.gridRow + gb.spanH && row + spanH > gb.gridRow) {
+        return true
       }
     }
-    return stacks
+    return false
   }
 
-  function renderBinCard(p: BinPlacement) {
-    const binItems = itemCounts[p.bin.id] ?? 0
-    const isDragging = dragBinId === p.bin.id
-    const heightPct = Math.min(100, (p.heightIn / shelfHeight) * 100)
+  function handleDrop(col: number, row: number, depthRow: "front" | "back") {
+    if (!dragBinId) return
+    const gb = gridBins.find((g) => g.bin.id === dragBinId)
+    if (!gb) return
+    // Check bounds
+    if (col + gb.spanW > numCols || row + gb.spanH > numRows) return
+    // Check collision
+    if (isOccupied(col, row, gb.spanW, gb.spanH, dragBinId, depthRow)) return
+    onMoveBin(dragBinId, col, row, depthRow)
+    setDragBinId(null)
+    setHoverCell(null)
+  }
+
+  function renderGrid(depthRow: "front" | "back") {
+    const rowBins = gridBins.filter((gb) => gb.depthRow === depthRow || gb.depthRow === "full")
+
+    // Build occupied cell map for highlighting
+    const occupiedMap = new Set<string>()
+    for (const gb of rowBins) {
+      for (let c = gb.gridCol; c < gb.gridCol + gb.spanW; c++) {
+        for (let r = gb.gridRow; r < gb.gridRow + gb.spanH; r++) {
+          occupiedMap.add(`${c},${r}`)
+        }
+      }
+    }
+
+    // Check if hover position is valid for the dragged bin
+    let hoverValid = false
+    let hoverSpanW = 1
+    let hoverSpanH = 1
+    if (hoverCell && hoverCell.depthRow === depthRow && dragBinId) {
+      const gb = gridBins.find((g) => g.bin.id === dragBinId)
+      if (gb) {
+        hoverSpanW = gb.spanW
+        hoverSpanH = gb.spanH
+        hoverValid = hoverCell.col + gb.spanW <= numCols &&
+                     hoverCell.row + gb.spanH <= numRows &&
+                     !isOccupied(hoverCell.col, hoverCell.row, gb.spanW, gb.spanH, dragBinId, depthRow)
+      }
+    }
+
+    const PX_PER_ROW = 40
 
     return (
       <div
-        key={p.bin.id}
-        draggable
-        onDragStart={(e) => { e.stopPropagation(); setDragBinId(p.bin.id) }}
-        onDragEnd={() => { setDragBinId(null); setDragOverSlot(null) }}
-        className={`rounded-md border px-2 py-1.5 cursor-grab active:cursor-grabbing transition-opacity ${
-          isDragging ? "opacity-20" : ""
-        } ${binItems > 0 ? "bg-primary/8 border-primary/20" : "bg-card border-border"}`}
-      >
-        <div className="flex items-center gap-1.5">
-          <GripVertical className="size-3 text-muted-foreground/40 shrink-0" />
-          <Link href={`/storage/${p.bin.id}`} className="text-[11px] font-medium truncate flex-1 hover:text-primary" draggable={false}>
-            {p.bin.name}
-          </Link>
-          {p.bin.nfc_tag_id && <Nfc className="size-2.5 text-emerald-500 shrink-0" />}
-        </div>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-[9px] text-muted-foreground">
-            {p.widthIn}&Prime; &times; {p.heightIn}&Prime;
-          </span>
-          {binItems > 0 && (
-            <span className="text-[9px] text-muted-foreground">{binItems} items</span>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  function renderRow(row: "front" | "back") {
-    const stacks = getStacks(row)
-    const isDropRow = dragOverSlot?.row === row
-
-    return (
-      <div
-        className="relative border-2 border-dashed border-border rounded-lg overflow-hidden"
-        style={{ minHeight: "80px" }}
-        onDragOver={(e) => {
-          e.preventDefault()
-          e.dataTransfer.dropEffect = "move"
-          const rect = e.currentTarget.getBoundingClientRect()
-          const x = e.clientX - rect.left
-          const col = Math.round((x / rect.width) * shelfWidth)
-          setDragOverSlot({ col: Math.max(0, Math.min(col, Math.round(shelfWidth) - 1)), row })
-        }}
-        onDrop={(e) => {
-          e.preventDefault()
-          if (dragOverSlot && dragOverSlot.row === row) handleDrop(dragOverSlot.col, row)
-        }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverSlot(null)
+        className="relative border-2 border-border rounded-lg overflow-hidden"
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${numCols}, 1fr)`,
+          gridTemplateRows: `repeat(${numRows}, ${PX_PER_ROW}px)`,
         }}
       >
-        {/* Column guide lines */}
-        {Array.from({ length: numLogicalCols - 1 }, (_, i) => (
+        {/* Background grid cells */}
+        {Array.from({ length: numRows }, (_, r) =>
+          Array.from({ length: numCols }, (_, c) => {
+            const cssRow = numRows - r  // flip: physical row 0 (bottom) = CSS grid row numRows
+            const isOcc = occupiedMap.has(`${c},${r}`)
+            const isHover = hoverCell?.depthRow === depthRow && hoverCell?.col === c && hoverCell?.row === r
+
+            return (
+              <div
+                key={`cell-${c}-${r}`}
+                className={`border border-dashed transition-colors ${
+                  isOcc ? "border-transparent" : "border-muted-foreground/10"
+                } ${isHover && !isOcc ? "bg-primary/5" : ""}`}
+                style={{ gridColumn: c + 1, gridRow: cssRow }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = "move"
+                  setHoverCell({ col: c, row: r, depthRow })
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  handleDrop(c, r, depthRow)
+                }}
+              />
+            )
+          })
+        )}
+
+        {/* Drop preview */}
+        {hoverCell && hoverCell.depthRow === depthRow && dragBinId && (
           <div
-            key={`guide-${i}`}
-            className="absolute top-0 bottom-0 border-l border-dashed border-muted-foreground/10 pointer-events-none"
-            style={{ left: `${((i + 1) / numLogicalCols) * 100}%` }}
+            className={`pointer-events-none border-2 rounded ${
+              hoverValid ? "border-primary bg-primary/10" : "border-destructive bg-destructive/10"
+            }`}
+            style={{
+              gridColumn: `${hoverCell.col + 1} / span ${hoverSpanW}`,
+              gridRow: `${numRows - hoverCell.row - hoverSpanH + 1} / span ${hoverSpanH}`,
+            }}
           />
-        ))}
+        )}
 
-        {/* Drop indicator */}
-        {isDropRow && dragBinId && (() => {
-          const dragBin = allBins.find((b) => b.id === dragBinId)
-          const dragWidth = dragBin ? (getEffectiveDimensions(dragBin).width ?? 11) : 11
+        {/* Bins */}
+        {rowBins.map((gb) => {
+          const binItems = itemCounts[gb.bin.id] ?? 0
+          const isDragging = dragBinId === gb.bin.id
+          const cssRowStart = numRows - gb.gridRow - gb.spanH + 1
+
           return (
             <div
-              className="absolute top-1 bottom-1 bg-primary/10 border-2 border-primary/30 rounded pointer-events-none"
+              key={gb.bin.id}
+              draggable
+              onDragStart={() => setDragBinId(gb.bin.id)}
+              onDragEnd={() => { setDragBinId(null); setHoverCell(null) }}
+              className={`rounded-md border m-0.5 px-1.5 py-1 cursor-grab active:cursor-grabbing transition-opacity z-10 flex flex-col justify-center ${
+                isDragging ? "opacity-20" : ""
+              } ${binItems > 0 ? "bg-primary/8 border-primary/20" : "bg-card border-border"}`}
               style={{
-                left: `${(dragOverSlot!.col / shelfWidth) * 100}%`,
-                width: `${(dragWidth / shelfWidth) * 100}%`,
-              }}
-            />
-          )
-        })()}
-
-        {/* Bin stacks — absolutely positioned by colStart, width proportional */}
-        {stacks.map((stack, si) => {
-          const anchor = stack[0]
-          return (
-            <div
-              key={`stack-${si}`}
-              className="absolute bottom-1 flex flex-col-reverse gap-0.5"
-              style={{
-                left: `${(anchor.colStart / shelfWidth) * 100}%`,
-                width: `${(anchor.widthIn / shelfWidth) * 100}%`,
-                padding: "0 2px",
+                gridColumn: `${gb.gridCol + 1} / span ${gb.spanW}`,
+                gridRow: `${cssRowStart} / span ${gb.spanH}`,
               }}
             >
-              {stack.map((p) => renderBinCard(p))}
+              <div className="flex items-center gap-1">
+                <GripVertical className="size-2.5 text-muted-foreground/40 shrink-0" />
+                <Link
+                  href={`/storage/${gb.bin.id}`}
+                  className="text-[10px] font-medium truncate flex-1 hover:text-primary"
+                  draggable={false}
+                >
+                  {gb.bin.name}
+                </Link>
+                {gb.bin.nfc_tag_id && <Nfc className="size-2 text-emerald-500 shrink-0" />}
+              </div>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className="text-[8px] text-muted-foreground">
+                  {gb.spanW}×{gb.spanH}
+                </span>
+                {binItems > 0 && (
+                  <span className="text-[8px] text-muted-foreground">{binItems} items</span>
+                )}
+              </div>
             </div>
           )
         })}
-
-        {/* Empty label */}
-        {stacks.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground/30">
-            {canDoFrontBack ? `${row} — drop bins here` : "drop bins here"}
-          </div>
-        )}
       </div>
     )
   }
@@ -215,35 +237,31 @@ export function ShelfOrganizer({ shelf, itemCounts, onMoveBin }: ShelfOrganizerP
       <div className="flex items-center justify-between">
         <h3 className="text-[13px] font-semibold">Shelf Layout</h3>
         <span className="text-[11px] text-muted-foreground">
-          {shelfWidth}&Prime; &times; {shelfDepth}&Prime; &times; {shelfHeight}&Prime;
-          &middot; {numLogicalCols} col{numLogicalCols !== 1 ? "s" : ""}
-          {canDoFrontBack && " &middot; front/back"}
+          {shelfWidth}&Prime; × {shelfHeight}&Prime;
+          → {numCols}×{numRows} grid
+          {canDoFrontBack && " · front/back"}
         </span>
       </div>
 
-      {/* Ruler with column labels */}
-      <div className="relative h-5">
-        {Array.from({ length: numLogicalCols }, (_, i) => (
-          <div
-            key={`col-${i}`}
-            className="absolute top-0 bottom-0 text-center"
-            style={{
-              left: `${(i / numLogicalCols) * 100}%`,
-              width: `${(1 / numLogicalCols) * 100}%`,
-            }}
-          >
-            <span className="text-[9px] text-muted-foreground/50">
-              Col {i + 1} ({Math.round(i * shelfWidth / numLogicalCols)}&Prime;–{Math.round((i + 1) * shelfWidth / numLogicalCols)}&Prime;)
-            </span>
+      {/* Column headers */}
+      <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${numCols}, 1fr)` }}>
+        {Array.from({ length: numCols }, (_, i) => (
+          <div key={i} className="text-[9px] text-muted-foreground/50 text-center">
+            Col {i + 1} ({SLOT_W}&Prime;)
           </div>
         ))}
       </div>
 
       <div className="space-y-2">
         {canDoFrontBack && <div className="text-[10px] text-muted-foreground font-medium">Back</div>}
-        {canDoFrontBack && renderRow("back")}
+        {canDoFrontBack && renderGrid("back")}
         {canDoFrontBack && <div className="text-[10px] text-muted-foreground font-medium">Front</div>}
-        {renderRow("front")}
+        {renderGrid("front")}
+      </div>
+
+      {/* Row legend */}
+      <div className="text-[9px] text-muted-foreground/40">
+        Each slot = {SLOT_W}&Prime; × {SLOT_H}&Prime; (1-gal bin). Drag bins to rearrange.
       </div>
     </div>
   )

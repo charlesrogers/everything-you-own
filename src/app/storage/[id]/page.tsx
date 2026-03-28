@@ -163,15 +163,16 @@ export default function LocationDetailPage() {
     await loadData()
   }
 
-  const handleMoveBinToCol = async (binId: string, colIndex: number, sortOrder: number, depthRow?: "front" | "back") => {
+  const handleMoveBinToCol = async (binId: string, gridCol: number, gridRow: number, depthRow?: "front" | "back") => {
     const bin = childLocations.find((l) => l.id === binId)
     if (!bin) return
     const metadata = {
       ...(bin.metadata as Record<string, unknown>),
-      col_index: colIndex,
+      grid_col: gridCol,
+      grid_row: gridRow,
       ...(depthRow ? { depth_row: depthRow } : {}),
     }
-    await store.updateLocation(binId, { metadata, sort_order: sortOrder })
+    await store.updateLocation(binId, { metadata })
     await loadData()
   }
 
