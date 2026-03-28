@@ -437,7 +437,7 @@ export default function StoragePage() {
                     <div className="flex items-center gap-2">
                       <Package className="size-4 text-muted-foreground shrink-0" />
                       <span className="text-[13px] font-medium flex-1 truncate">{String(item.name)}</span>
-                      {item.brand && <span className="text-[11px] text-muted-foreground">{String(item.brand)}</span>}
+                      {item.brand ? <span className="text-[11px] text-muted-foreground">{String(item.brand)}</span> : null}
                       {item.price != null && <span className="text-[12px] text-muted-foreground">${Number(item.price).toFixed(2)}</span>}
                     </div>
                     {Array.isArray(item.locations) && (item.locations as {id: string; path: string}[]).map((loc) => (
@@ -458,7 +458,7 @@ export default function StoragePage() {
               ) : (
                 // Location/Bin/Shelf results
                 searchResults.map((loc) => {
-                  const l = loc as Location
+                  const l = loc as unknown as Location
                   return (
                     <Link
                       key={l.id}
@@ -660,7 +660,7 @@ export default function StoragePage() {
             <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
               {bins.length === 0 ? (
                 <div className="p-8 text-center text-[13px] text-muted-foreground">
-                  No bins yet. Click &quot;Add Bin&quot; above to create one.
+                  {hasActiveFilters ? "No bins match the current filters." : "No bins yet. Click \"Add Bin\" above to create one."}
                 </div>
               ) : bins.map((bin) => {
                 const isExpanded = expandedId === bin.id

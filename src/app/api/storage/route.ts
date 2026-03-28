@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
 
     // Get locations for these products
     const productIds = (products ?? []).map((p) => p.id)
-    let productLocMap: Record<string, string[]> = {}
+    const productLocMap: Record<string, string[]> = {}
     if (productIds.length > 0) {
       const { data: pls } = await sb
         .from('product_locations')
