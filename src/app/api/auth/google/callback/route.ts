@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 const GOOGLE_CLIENT_ID = "862570667285-8i8nms9lu1qkinh6bpas6q6jdmb5v2bi.apps.googleusercontent.com"
-const PROD_REDIRECT_URI = "https://everythingyouown.vercel.app/api/auth/google/callback"
+const PROD_REDIRECT_URI = "https://stuff.imprevista.com/api/auth/google/callback"
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code")

@@ -6,12 +6,11 @@ const IMPORTED_KEY = "eyo_imported_emails"
 // --- OAuth (redirect flow) ---
 
 const GOOGLE_CLIENT_ID = "862570667285-8i8nms9lu1qkinh6bpas6q6jdmb5v2bi.apps.googleusercontent.com"
-const PROD_ORIGIN = "https://everythingyouown.vercel.app"
+const PROD_ORIGIN = "https://stuff.imprevista.com"
 
 export function getRedirectUri(): string {
   if (typeof window === "undefined") return `${PROD_ORIGIN}/api/auth/google/callback`
-  const isLocalhost = window.location.hostname === "localhost"
-  const origin = isLocalhost ? window.location.origin : PROD_ORIGIN
+  const origin = window.location.origin
   return `${origin}/api/auth/google/callback`
 }
 
