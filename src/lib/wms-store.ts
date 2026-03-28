@@ -68,6 +68,7 @@ export async function createLocation(
   householdId: string,
   input: CreateLocationInput,
 ): Promise<Location> {
+  if (!householdId) throw new Error('Cannot create location: not authenticated')
   const { data, error } = await sb
     .from('locations')
     .insert({

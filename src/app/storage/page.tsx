@@ -31,6 +31,7 @@ export default function StoragePage() {
   const [addBinName, setAddBinName] = useState("")
   const [addBinTemplate, setAddBinTemplate] = useState("")
   const [addingBin, setAddingBin] = useState(false)
+  const [addBinError, setAddBinError] = useState("")
 
   useEffect(() => {
     if (authLoading) return
@@ -68,6 +69,7 @@ export default function StoragePage() {
     const parentId = shelfId || addBinShelfId
     if (!parentId || !addBinName.trim()) return
     setAddingBin(true)
+    setAddBinError("")
     try {
       const template = SAMLA_BINS.find((b) => b.id === addBinTemplate)
       await store.createLocation({
@@ -86,6 +88,8 @@ export default function StoragePage() {
       setShowAddBin(false)
       await reloadData()
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to add bin"
+      setAddBinError(msg)
       console.error("Failed to add bin:", err)
     } finally {
       setAddingBin(false)
@@ -309,6 +313,9 @@ export default function StoragePage() {
                     placeholder="Bin name (e.g., Holiday Decorations)"
                     className="w-full rounded-lg border bg-background px-3 py-2 text-[13px]"
                   />
+                  {addBinError && (
+                    <div className="text-[12px] text-red-500">{addBinError}</div>
+                  )}
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleAddBin()}
@@ -319,7 +326,7 @@ export default function StoragePage() {
                       {addingBin ? "Adding..." : "Add Bin"}
                     </button>
                     <button
-                      onClick={() => setShowAddBin(false)}
+                      onClick={() => { setShowAddBin(false); setAddBinError("") }}
                       className="rounded-lg border px-3 py-1.5 text-[12px] font-medium hover:bg-accent"
                     >
                       Cancel
