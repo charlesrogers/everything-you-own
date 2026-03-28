@@ -351,8 +351,8 @@ export default function StoragePage() {
                         <div className="text-[11px] text-muted-foreground">{getParentPath(bin)}</div>
                       </Link>
                       {bin.template_id && (
-                        <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded hidden sm:inline">
-                          {bin.template_id.replace("samla_", "").replace("gal", " gal")}
+                        <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
+                          {bin.template_id.replace("samla_", "SAMLA ").replace("gal", " gal")}
                         </span>
                       )}
                       {count > 0 && (
@@ -360,7 +360,19 @@ export default function StoragePage() {
                           {count}
                         </span>
                       )}
-                      {bin.nfc_tag_id && <Nfc className="size-3 text-emerald-500" />}
+                      {bin.short_id && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); copyNfcUrl(bin) }}
+                          title={copiedId === bin.id ? "Copied!" : "Copy NFC URL"}
+                          className="shrink-0"
+                        >
+                          <Nfc className={`size-3.5 transition-colors ${
+                            copiedId === bin.id ? "text-emerald-500"
+                            : bin.nfc_tag_id ? "text-emerald-500"
+                            : "text-muted-foreground/30 hover:text-muted-foreground"
+                          }`} />
+                        </button>
+                      )}
                       <Link
                         href={`/storage/${bin.id}/add`}
                         className="text-[11px] text-primary hover:text-primary/80 font-medium shrink-0"

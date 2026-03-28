@@ -469,11 +469,23 @@ export default function LocationDetailPage() {
               {copiedNfc ? "Copied!" : "Copy NFC URL"}
             </button>
           )}
-          {location.nfc_tag_id && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-emerald-500/10 text-emerald-600 px-2 py-1 rounded-full">
+          {location.short_id && (
+            <button
+              onClick={async () => {
+                const newVal = location.nfc_tag_id ? null : location.short_id
+                await store.updateLocation(locationId, { nfc_tag_id: newVal })
+                await loadData()
+              }}
+              className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full transition-colors ${
+                location.nfc_tag_id
+                  ? "bg-emerald-500/10 text-emerald-600 hover:bg-red-500/10 hover:text-red-600"
+                  : "bg-muted text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-600"
+              }`}
+              title={location.nfc_tag_id ? "Click to unmark NFC tag" : "Mark as NFC tagged"}
+            >
               <Nfc className="size-3" />
-              Tagged
-            </span>
+              {location.nfc_tag_id ? "Tagged" : "Not tagged"}
+            </button>
           )}
           {confirmDelete === locationId ? (
             <div className="flex items-center gap-1.5">
