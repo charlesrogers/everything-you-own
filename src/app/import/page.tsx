@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import {
   Mail, CheckCircle, AlertTriangle, Loader2, ChevronLeft, ChevronRight,
-  Package, Check, X,
+  Package, Check, X, Download, Upload,
 } from "lucide-react"
 import {
   getGmailAuthUrl, searchReceipts, batchGetMetadata,
@@ -16,6 +16,7 @@ import { parseReceiptEmail, classifyEmail, htmlToText } from "@/lib/receipt-pars
 import { useStore } from "@/hooks/use-store"
 import type { Category, Subcategory, ProductOwnership } from "@/lib/types"
 import { OWNERSHIP_OPTIONS, EXPENSE_TAGS } from "@/lib/constants"
+import { CsvImport } from "./csv-import"
 
 type Phase = "connect" | "select" | "review"
 
@@ -73,6 +74,7 @@ function ImportContent() {
   // Shared
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
+  const [activeTab, setActiveTab] = useState<"gmail" | "csv">("gmail")
 
   useEffect(() => {
     async function init() {
@@ -355,10 +357,71 @@ function ImportContent() {
     }
   }
 
+  // --- Gmail CSV Export ---
+  const handleExportCsv = async () => {
+    const selected = emails.filter((e) => e.selected)
+    if (selected.length === 0) return
+
+    setPhase("review")
+    setProcessing(true)
+    setProcessProgress({ current: 0, total: selected.length })
+
+    const csvRows: string[][] = [["name", "brand", "price", "retailer", "purchase_date", "category", "order_id", "quantity", "notes"]]
+
+    for (let i = 0; i < selected.length; i++) {
+      const email = selected[i]
+      setProcessProgress({ current: i + 1, total: selected.length })
+
+      const emailType = classifyEmail(email.subject)
+      if (emailType !== "order" && emailType !== "unknown") continue
+
+      try {
+        const html = await getMessageBody(token, email.id)
+        const result = parseReceiptEmail(html, email.subject, email.from, email.date)
+
+        for (const product of result.products) {
+          csvRows.push([
+            product.name,
+            product.brand || "",
+            product.price?.toString() || "",
+            product.retailer,
+            product.purchase_date || "",
+            product.category_guess || "",
+            product.order_id || "",
+            product.quantity?.toString() || "1",
+            "",
+          ])
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message === "SESSION_EXPIRED") {
+          setError("Session expired. Please reconnect.")
+          setPhase("connect")
+          return
+        }
+        console.error(`Failed to process email ${email.id}:`, e)
+      }
+    }
+
+    // Trigger download
+    const csvContent = csvRows.map(row =>
+      row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(",")
+    ).join("\n")
+    const blob = new Blob([csvContent], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `receipt-products-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+
+    setProcessing(false)
+    setPhase("select")
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        {phase !== "connect" && (
+        {activeTab === "gmail" && phase !== "connect" && (
           <button
             onClick={() => {
               if (phase === "review" && !processing) setPhase("select")
@@ -369,8 +432,39 @@ function ImportContent() {
             <ChevronLeft className="size-4" />
           </button>
         )}
-        <h1 className="text-[20px] font-bold">Import from Gmail</h1>
+        <h1 className="text-[20px] font-bold">Import Products</h1>
       </div>
+
+      {/* Tab switcher */}
+      <div className="flex gap-1 border-b">
+        <button
+          onClick={() => setActiveTab("gmail")}
+          className={`px-3 py-2 text-[13px] font-medium border-b-2 transition-colors ${
+            activeTab === "gmail" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Mail className="size-3.5 inline mr-1.5" />
+          Gmail
+        </button>
+        <button
+          onClick={() => setActiveTab("csv")}
+          className={`px-3 py-2 text-[13px] font-medium border-b-2 transition-colors ${
+            activeTab === "csv" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Upload className="size-3.5 inline mr-1.5" />
+          CSV Upload
+        </button>
+      </div>
+
+      {/* CSV Tab */}
+      {activeTab === "csv" && (
+        <CsvImport categories={categories} subcategories={subcategories} store={store} />
+      )}
+
+      {/* Gmail Tab */}
+      {activeTab === "gmail" && (<>
+
 
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30 px-4 py-3 text-[13px] text-red-700 dark:text-red-400">
@@ -504,13 +598,23 @@ function ImportContent() {
                 <span className="text-[12px] text-muted-foreground">
                   {selectedCount} email{selectedCount !== 1 ? "s" : ""} selected
                 </span>
-                <button
-                  onClick={handleProcess}
-                  disabled={selectedCount === 0}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
-                >
-                  Process Selected
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportCsv}
+                    disabled={selectedCount === 0}
+                    className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-[13px] font-medium text-foreground hover:bg-accent transition-colors active:translate-y-px disabled:opacity-50"
+                  >
+                    <Download className="size-3.5" />
+                    Download CSV
+                  </button>
+                  <button
+                    onClick={handleProcess}
+                    disabled={selectedCount === 0}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
+                  >
+                    Process Selected
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -759,6 +863,7 @@ function ImportContent() {
           )}
         </div>
       )}
+      </>)}
     </div>
   )
 }
