@@ -27,7 +27,7 @@ jobs:
             ghcr.io/charlesrogers/everything-you-own-app:latest
             ghcr.io/charlesrogers/everything-you-own-app:${{ github.sha }}
           build-args: |
-            NEXT_PUBLIC_SUPABASE_URL=http://95.216.205.160:8100
+            NEXT_PUBLIC_SUPABASE_URL=https://db.imprevista.com
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
             NEXT_PUBLIC_USE_SUPABASE=true
             SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
