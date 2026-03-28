@@ -68,12 +68,26 @@ export default function StoragePage() {
     setItemCounts(data.itemCounts ?? {})
   }
 
+  async function getOrCreateUnsortedZone(): Promise<string> {
+    const existing = locations.find((l) => l.name === "Unsorted" && l.location_type === "zone" && !l.parent_id)
+    if (existing) return existing.id
+    const zone = await store.createLocation({
+      parent_id: null,
+      location_type: "zone",
+      name: "Unsorted",
+    })
+    return zone.id
+  }
+
   async function handleAddBin(shelfId?: string) {
-    const parentId = shelfId || addBinShelfId
-    if (!parentId || !addBinName.trim()) return
+    if (!addBinName.trim()) return
     setAddingBin(true)
     setAddBinError("")
     try {
+      let parentId = shelfId || addBinShelfId
+      if (!parentId) {
+        parentId = await getOrCreateUnsortedZone()
+      }
       const template = SAMLA_BINS.find((b) => b.id === addBinTemplate)
       await store.createLocation({
         parent_id: parentId,
@@ -308,7 +322,7 @@ export default function StoragePage() {
                     onChange={(e) => setAddBinShelfId(e.target.value)}
                     className="w-full rounded-lg border bg-background px-3 py-2 text-[13px]"
                   >
-                    <option value="">Select a shelf...</option>
+                    <option value="">Unsorted (assign shelf later)</option>
                     {shelves.map((s) => (
                       <option key={s.id} value={s.id}>{getParentPath(s)} \u203a {s.name}</option>
                     ))}
@@ -336,7 +350,7 @@ export default function StoragePage() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleAddBin()}
-                      disabled={!addBinShelfId || !addBinName.trim() || addingBin}
+                      disabled={!addBinName.trim() || addingBin}
                       className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                     >
                       <Plus className="size-3" />
