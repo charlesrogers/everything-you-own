@@ -94,7 +94,7 @@ export async function createLocation(
 export async function updateLocation(
   sb: Client,
   id: string,
-  updates: Partial<Pick<Location, 'name' | 'label' | 'unit_subtype' | 'template_id' | 'width_in' | 'depth_in' | 'height_in' | 'nfc_tag_id' | 'metadata' | 'sort_order' | 'is_archived'>>,
+  updates: Partial<Pick<Location, 'name' | 'label' | 'parent_id' | 'unit_subtype' | 'template_id' | 'width_in' | 'depth_in' | 'height_in' | 'nfc_tag_id' | 'metadata' | 'sort_order' | 'is_archived'>>,
 ): Promise<void> {
   const { error } = await sb
     .from('locations')

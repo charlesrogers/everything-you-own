@@ -32,6 +32,9 @@ export default function StoragePage() {
   const [addBinTemplate, setAddBinTemplate] = useState("")
   const [addingBin, setAddingBin] = useState(false)
   const [addBinError, setAddBinError] = useState("")
+  // Relocate bin
+  const [relocatingBinId, setRelocatingBinId] = useState<string | null>(null)
+  const [relocating, setRelocating] = useState(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -93,6 +96,20 @@ export default function StoragePage() {
       console.error("Failed to add bin:", err)
     } finally {
       setAddingBin(false)
+    }
+  }
+
+  async function handleRelocateBin(binId: string, newShelfId: string) {
+    if (!newShelfId) return
+    setRelocating(true)
+    try {
+      await store.updateLocation(binId, { parent_id: newShelfId })
+      setRelocatingBinId(null)
+      await reloadData()
+    } catch (err) {
+      console.error("Failed to relocate bin:", err)
+    } finally {
+      setRelocating(false)
     }
   }
 
@@ -358,10 +375,41 @@ export default function StoragePage() {
                         {isExpanded ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
                       </button>
                       <Package className="size-4 text-muted-foreground shrink-0" />
-                      <Link href={`/storage/${bin.id}`} className="flex-1 min-w-0 hover:text-primary">
-                        <div className="text-[13px] font-medium truncate">{bin.name}</div>
-                        <div className="text-[11px] text-muted-foreground">{getParentPath(bin)}</div>
-                      </Link>
+                      <div className="flex-1 min-w-0">
+                        <Link href={`/storage/${bin.id}`} className="hover:text-primary">
+                          <div className="text-[13px] font-medium truncate">{bin.name}</div>
+                        </Link>
+                        {relocatingBinId === bin.id ? (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <select
+                              autoFocus
+                              defaultValue={bin.parent_id ?? ""}
+                              onChange={(e) => {
+                                if (e.target.value && e.target.value !== bin.parent_id) {
+                                  handleRelocateBin(bin.id, e.target.value)
+                                } else {
+                                  setRelocatingBinId(null)
+                                }
+                              }}
+                              onBlur={() => !relocating && setRelocatingBinId(null)}
+                              disabled={relocating}
+                              className="rounded border bg-background px-2 py-0.5 text-[11px] max-w-[250px]"
+                            >
+                              {shelves.map((s) => (
+                                <option key={s.id} value={s.id}>{getParentPath(s)} › {s.name}</option>
+                              ))}
+                            </select>
+                            {relocating && <span className="text-[10px] text-muted-foreground">Moving...</span>}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setRelocatingBinId(bin.id)}
+                            className="text-[11px] text-muted-foreground hover:text-primary hover:underline text-left truncate max-w-full"
+                          >
+                            {getParentPath(bin)}
+                          </button>
+                        )}
+                      </div>
                       {bin.template_id && (
                         <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
                           {bin.template_id.replace("samla_", "SAMLA ").replace("gal", " gal")}
