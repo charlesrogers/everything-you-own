@@ -442,8 +442,18 @@ export default function LocationDetailPage() {
           {location.short_id && (
             <button
               onClick={() => {
-                const url = `https://stuff.imprevista.com/s/${location.short_id}`
-                navigator.clipboard.writeText(url)
+                const url = `${window.location.origin}/s/${location.short_id}`
+                if (navigator.clipboard?.writeText) {
+                  navigator.clipboard.writeText(url).catch(() => {
+                    const ta = document.createElement("textarea")
+                    ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0"
+                    document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta)
+                  })
+                } else {
+                  const ta = document.createElement("textarea")
+                  ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0"
+                  document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta)
+                }
                 setCopiedNfc(true)
                 setTimeout(() => setCopiedNfc(false), 2000)
               }}

@@ -143,9 +143,26 @@ export default function StoragePage() {
 
   function copyNfcUrl(loc: Location) {
     if (!loc.short_id) return
-    navigator.clipboard.writeText(`https://stuff.imprevista.com/s/${loc.short_id}`)
+    const url = `${window.location.origin}/s/${loc.short_id}`
+    // navigator.clipboard requires HTTPS; fall back to execCommand on HTTP
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).catch(() => fallbackCopy(url))
+    } else {
+      fallbackCopy(url)
+    }
     setCopiedId(loc.id)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  function fallbackCopy(text: string) {
+    const ta = document.createElement("textarea")
+    ta.value = text
+    ta.style.position = "fixed"
+    ta.style.opacity = "0"
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand("copy")
+    document.body.removeChild(ta)
   }
 
   function getBinCount(shelfId: string): number {
