@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
-import { Plus, Warehouse, Settings2, Package, Minus, Nfc, Copy, ClipboardCheck, Inbox, ChevronDown, ChevronRight, Trash2 } from "lucide-react"
+import { Plus, Warehouse, Settings2, Package, Minus, Nfc, Copy, ClipboardCheck, Inbox, ChevronDown, ChevronRight, Trash2, Search, X, MapPin, DoorOpen, Server } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { useStore } from "@/hooks/use-store"
 import type { Location, LocationTreeNode, CreateLocationInput } from "@/lib/wms-types"
@@ -25,6 +25,13 @@ export default function StoragePage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedItems, setExpandedItems] = useState<Record<string, unknown>[]>([])
   const [loadingItems, setLoadingItems] = useState(false)
+  // Search
+  type SearchType = "items" | "bins" | "shelves" | "locations"
+  const [searchType, setSearchType] = useState<SearchType>("items")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<Record<string, unknown>[] | null>(null)
+  const [searching, setSearching] = useState(false)
+
   // Add bin inline form
   const [showAddBin, setShowAddBin] = useState(false)
   const [addBinShelfId, setAddBinShelfId] = useState("")
@@ -35,6 +42,12 @@ export default function StoragePage() {
   // Relocate bin
   const [relocatingBinId, setRelocatingBinId] = useState<string | null>(null)
   const [relocating, setRelocating] = useState(false)
+  // Bin filters
+  const [filterRoom, setFilterRoom] = useState<string>("all")
+  const [filterUnit, setFilterUnit] = useState<string>("all")
+  const [filterShelf, setFilterShelf] = useState<string>("all")
+  const [filterBinType, setFilterBinType] = useState<string>("all")
+  const [filterUnsorted, setFilterUnsorted] = useState(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -67,6 +80,39 @@ export default function StoragePage() {
     setTree(buildLocationTree(data.locations ?? []))
     setItemCounts(data.itemCounts ?? {})
   }
+
+  // Search handler
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults(null)
+      return
+    }
+    const q = searchQuery.toLowerCase()
+    const timeout = setTimeout(async () => {
+      if (searchType === "items") {
+        // Server-side search for items with locations
+        setSearching(true)
+        try {
+          const res = await fetch(`/api/storage?q=${encodeURIComponent(q)}&type=items`)
+          const data = await res.json()
+          setSearchResults(data.searchResults ?? [])
+        } catch { setSearchResults([]) }
+        setSearching(false)
+      } else {
+        // Client-side search on already-loaded locations
+        let filtered: Location[]
+        if (searchType === "bins") {
+          filtered = locations.filter((l) => l.unit_subtype === "bin" && l.name.toLowerCase().includes(q))
+        } else if (searchType === "shelves") {
+          filtered = locations.filter((l) => (l.unit_subtype === "shelf" || l.unit_subtype === "drawer") && l.name.toLowerCase().includes(q))
+        } else {
+          filtered = locations.filter((l) => l.name.toLowerCase().includes(q))
+        }
+        setSearchResults(filtered.map((l) => ({ ...l, _type: "location" })))
+      }
+    }, 300) // debounce
+    return () => clearTimeout(timeout)
+  }, [searchQuery, searchType, locations])
 
   async function getOrCreateUnsortedZone(): Promise<string> {
     const existing = locations.find((l) => l.name === "Unsorted" && l.location_type === "zone" && !l.parent_id)
@@ -140,11 +186,86 @@ export default function StoragePage() {
     return parts.join(" \u203a ")
   }
 
+  // Precompute ancestors for each bin (room, unit, shelf)
+  const binAncestors = useMemo(() => {
+    const result: Record<string, { roomId: string | null; unitId: string | null; shelfId: string | null }> = {}
+    for (const loc of locations) {
+      if (loc.unit_subtype !== "bin") continue
+      let roomId: string | null = null
+      let unitId: string | null = null
+      let shelfId: string | null = null
+      let cur = loc.parent_id ? locMap.get(loc.parent_id) : undefined
+      while (cur) {
+        if (!shelfId && (cur.unit_subtype === "shelf" || cur.unit_subtype === "drawer")) shelfId = cur.id
+        if (!unitId && cur.location_type === "unit") unitId = cur.id
+        if (!roomId && cur.location_type === "room") roomId = cur.id
+        cur = cur.parent_id ? locMap.get(cur.parent_id) : undefined
+      }
+      result[loc.id] = { roomId, unitId, shelfId }
+    }
+    return result
+  }, [locations, locMap])
+
   // Filtered lists
-  const bins = useMemo(() =>
+  const allBins = useMemo(() =>
     locations.filter((l) => l.unit_subtype === "bin").sort((a, b) => a.name.localeCompare(b.name)),
     [locations]
   )
+
+  // Filter option lists (cascading)
+  const filterRooms = useMemo(() => {
+    const ids = new Set(Object.values(binAncestors).map((a) => a.roomId).filter(Boolean) as string[])
+    return [...ids].map((id) => locMap.get(id)!).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+  }, [binAncestors, locMap])
+
+  const filterUnits = useMemo(() => {
+    const ids = new Set(
+      Object.values(binAncestors)
+        .filter((a) => filterRoom === "all" || a.roomId === filterRoom)
+        .map((a) => a.unitId)
+        .filter(Boolean) as string[]
+    )
+    return [...ids].map((id) => locMap.get(id)!).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+  }, [binAncestors, locMap, filterRoom])
+
+  const filterShelves = useMemo(() => {
+    const ids = new Set(
+      Object.values(binAncestors)
+        .filter((a) => (filterRoom === "all" || a.roomId === filterRoom) && (filterUnit === "all" || a.unitId === filterUnit))
+        .map((a) => a.shelfId)
+        .filter(Boolean) as string[]
+    )
+    return [...ids].map((id) => locMap.get(id)!).filter(Boolean).sort((a, b) => {
+      const pa = getParentPath(a)
+      const pb = getParentPath(b)
+      return pa.localeCompare(pb) || a.sort_order - b.sort_order
+    })
+  }, [binAncestors, locMap, filterRoom, filterUnit])
+
+  const filterBinTypes = useMemo(() => {
+    const ids = new Set(allBins.map((b) => b.template_id ?? "none"))
+    return [...ids].sort().map((id) => {
+      if (id === "none") return { id: "none", name: "Custom / No type" }
+      const samla = SAMLA_BINS.find((b) => b.id === id)
+      return { id, name: samla ? samla.name : id }
+    })
+  }, [allBins])
+
+  const filteredBins = useMemo(() => {
+    let result = [...allBins]
+    if (filterUnsorted) {
+      result = result.filter((b) => !binAncestors[b.id]?.shelfId)
+    } else {
+      if (filterRoom !== "all") result = result.filter((b) => binAncestors[b.id]?.roomId === filterRoom)
+      if (filterUnit !== "all") result = result.filter((b) => binAncestors[b.id]?.unitId === filterUnit)
+      if (filterShelf !== "all") result = result.filter((b) => binAncestors[b.id]?.shelfId === filterShelf)
+    }
+    if (filterBinType !== "all") result = result.filter((b) => (b.template_id ?? "none") === filterBinType)
+    return result
+  }, [allBins, filterRoom, filterUnit, filterShelf, filterBinType, filterUnsorted, binAncestors])
+
+  const bins = filteredBins
+  const hasActiveFilters = filterRoom !== "all" || filterUnit !== "all" || filterShelf !== "all" || filterBinType !== "all" || filterUnsorted
   const shelves = useMemo(() =>
     locations.filter((l) => l.unit_subtype === "shelf" || l.unit_subtype === "drawer").sort((a, b) => {
       const pa = getParentPath(a)
@@ -261,6 +382,113 @@ export default function StoragePage() {
         </div>
       </div>
 
+      {/* Search bar */}
+      {totalLocations > 0 && (
+        <div className="flex gap-2">
+          <select
+            value={searchType}
+            onChange={(e) => { setSearchType(e.target.value as SearchType); setSearchResults(null) }}
+            className="rounded-lg border bg-background px-3 py-2 text-[13px] font-medium w-32 shrink-0"
+          >
+            <option value="items">Items</option>
+            <option value="bins">Bins</option>
+            <option value="shelves">Shelves</option>
+            <option value="locations">Locations</option>
+          </select>
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={`Search ${searchType}...`}
+              className="w-full rounded-lg border bg-background pl-10 pr-8 py-2 text-[13px]"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => { setSearchQuery(""); setSearchResults(null) }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Search results */}
+      {searchResults && searchQuery.trim() && (
+        <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
+          <div className="px-4 py-2 border-b">
+            <span className="text-[12px] text-muted-foreground">
+              {searching ? "Searching..." : `${searchResults.length} result${searchResults.length !== 1 ? "s" : ""} for "${searchQuery}" in ${searchType}`}
+            </span>
+          </div>
+          {searchResults.length === 0 && !searching ? (
+            <div className="p-8 text-center text-[13px] text-muted-foreground">
+              No {searchType} match &quot;{searchQuery}&quot;
+            </div>
+          ) : (
+            <div className="divide-y">
+              {searchType === "items" ? (
+                // Item results with location paths
+                searchResults.map((item) => (
+                  <div key={String(item.id)} className="px-4 py-3 hover:bg-accent/50 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <Package className="size-4 text-muted-foreground shrink-0" />
+                      <span className="text-[13px] font-medium flex-1 truncate">{String(item.name)}</span>
+                      {item.brand && <span className="text-[11px] text-muted-foreground">{String(item.brand)}</span>}
+                      {item.price != null && <span className="text-[12px] text-muted-foreground">${Number(item.price).toFixed(2)}</span>}
+                    </div>
+                    {Array.isArray(item.locations) && (item.locations as {id: string; path: string}[]).map((loc) => (
+                      <Link
+                        key={loc.id}
+                        href={`/storage/${loc.id}`}
+                        className="flex items-center gap-1.5 mt-1 ml-6 text-[11px] text-muted-foreground hover:text-primary"
+                      >
+                        <MapPin className="size-3" />
+                        {loc.path}
+                      </Link>
+                    ))}
+                    {(!item.locations || (item.locations as unknown[]).length === 0) && (
+                      <span className="ml-6 text-[11px] text-muted-foreground/50">Not stored anywhere</span>
+                    )}
+                  </div>
+                ))
+              ) : (
+                // Location/Bin/Shelf results
+                searchResults.map((loc) => {
+                  const l = loc as Location
+                  return (
+                    <Link
+                      key={l.id}
+                      href={`/storage/${l.id}`}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
+                    >
+                      {l.unit_subtype === "bin" ? <Package className="size-4 text-muted-foreground shrink-0" /> :
+                       l.unit_subtype === "shelf" ? <Minus className="size-4 text-muted-foreground shrink-0" /> :
+                       l.unit_subtype === "rack" ? <Server className="size-4 text-muted-foreground shrink-0" /> :
+                       l.location_type === "room" ? <DoorOpen className="size-4 text-muted-foreground shrink-0" /> :
+                       <MapPin className="size-4 text-muted-foreground shrink-0" />}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-medium truncate">{l.name}</div>
+                        <div className="text-[11px] text-muted-foreground">{getParentPath(l)}</div>
+                      </div>
+                      {(itemCounts[l.id] ?? 0) > 0 && (
+                        <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">
+                          {itemCounts[l.id]} items
+                        </span>
+                      )}
+                      {l.nfc_tag_id && <Nfc className="size-3 text-emerald-500" />}
+                    </Link>
+                  )
+                })
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Empty state */}
       {totalLocations === 0 && (
         <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] p-12 text-center">
@@ -285,7 +513,7 @@ export default function StoragePage() {
           <div className="flex gap-1 border-b">
             {([
               { id: "tree" as Tab, label: "Tree" },
-              { id: "bins" as Tab, label: `Bins (${bins.length})` },
+              { id: "bins" as Tab, label: `Bins (${hasActiveFilters ? `${filteredBins.length} of ${allBins.length}` : allBins.length})` },
               { id: "shelves" as Tab, label: `Shelves (${shelves.length})` },
               { id: "tag" as Tab, label: `Tag Bins` },
             ]).map((t) => (
@@ -373,6 +601,61 @@ export default function StoragePage() {
                   Add Bin
                 </button>
               )}
+
+            {/* Filter bar */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={filterRoom}
+                onChange={(e) => { setFilterRoom(e.target.value); setFilterUnit("all"); setFilterShelf("all") }}
+                disabled={filterUnsorted}
+                className="rounded-lg border bg-background px-2 py-1.5 text-[12px] disabled:opacity-40"
+              >
+                <option value="all">All rooms</option>
+                {filterRooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+              <select
+                value={filterUnit}
+                onChange={(e) => { setFilterUnit(e.target.value); setFilterShelf("all") }}
+                disabled={filterUnsorted || filterRoom === "all"}
+                className="rounded-lg border bg-background px-2 py-1.5 text-[12px] disabled:opacity-40"
+              >
+                <option value="all">All racks</option>
+                {filterUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+              <select
+                value={filterShelf}
+                onChange={(e) => setFilterShelf(e.target.value)}
+                disabled={filterUnsorted || (filterRoom === "all" && filterUnit === "all")}
+                className="rounded-lg border bg-background px-2 py-1.5 text-[12px] disabled:opacity-40"
+              >
+                <option value="all">All shelves</option>
+                {filterShelves.map((s) => <option key={s.id} value={s.id}>{s.label ?? s.name}</option>)}
+              </select>
+              <select
+                value={filterBinType}
+                onChange={(e) => setFilterBinType(e.target.value)}
+                className="rounded-lg border bg-background px-2 py-1.5 text-[12px]"
+              >
+                <option value="all">All types</option>
+                {filterBinTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <button
+                onClick={() => { setFilterUnsorted(!filterUnsorted); if (!filterUnsorted) { setFilterRoom("all"); setFilterUnit("all"); setFilterShelf("all") } }}
+                className={`rounded-lg border px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+                  filterUnsorted ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                }`}
+              >
+                Unsorted
+              </button>
+              {hasActiveFilters && (
+                <button
+                  onClick={() => { setFilterRoom("all"); setFilterUnit("all"); setFilterShelf("all"); setFilterBinType("all"); setFilterUnsorted(false) }}
+                  className="text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
 
             <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
               {bins.length === 0 ? (

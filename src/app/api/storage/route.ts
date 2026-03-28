@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
 
   const hid = membership.household_id
   const locationId = request.nextUrl.searchParams.get('id')
+  const searchQuery = request.nextUrl.searchParams.get('q')
+  const searchType = request.nextUrl.searchParams.get('type') ?? 'items'
 
   // Fetch all locations (always needed for tree + breadcrumbs)
   const { data: locations, error: locErr } = await sb
@@ -102,10 +104,58 @@ export async function GET(request: NextRequest) {
     })
   }
 
+  // Item search — returns products with their storage locations
+  let searchResults = null
+  if (searchQuery && searchType === 'items') {
+    const q = searchQuery.toLowerCase()
+    const { data: products } = await sb
+      .from('products')
+      .select('id, name, brand, image_url, price, status')
+      .eq('household_id', hid)
+      .or(`name.ilike.%${q}%,brand.ilike.%${q}%`)
+      .limit(30)
+
+    // Get locations for these products
+    const productIds = (products ?? []).map((p) => p.id)
+    let productLocMap: Record<string, string[]> = {}
+    if (productIds.length > 0) {
+      const { data: pls } = await sb
+        .from('product_locations')
+        .select('product_id, location_id')
+        .in('product_id', productIds)
+
+      for (const pl of pls ?? []) {
+        if (!productLocMap[pl.product_id]) productLocMap[pl.product_id] = []
+        productLocMap[pl.product_id].push(pl.location_id)
+      }
+    }
+
+    // Build location path lookup from already-fetched locations
+    const locMap = new Map((locations ?? []).map((l: Record<string, unknown>) => [l.id as string, l]))
+    function getPath(locId: string): string {
+      const parts: string[] = []
+      let cur = locMap.get(locId) as Record<string, unknown> | undefined
+      while (cur) {
+        parts.unshift(cur.name as string)
+        cur = cur.parent_id ? locMap.get(cur.parent_id as string) as Record<string, unknown> | undefined : undefined
+      }
+      return parts.join(' › ')
+    }
+
+    searchResults = (products ?? []).map((p) => ({
+      ...p,
+      locations: (productLocMap[p.id] ?? []).map((lid) => ({
+        id: lid,
+        path: getPath(lid),
+      })),
+    }))
+  }
+
   return NextResponse.json({
     locations: locations ?? [],
     itemCounts,
     shelfItemsByPosition,
     contents,
+    searchResults,
   })
 }
