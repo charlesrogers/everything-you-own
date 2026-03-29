@@ -340,19 +340,21 @@ DECLARE
 BEGIN
   FOR cat_record IN
     SELECT * FROM (VALUES
-      (0, 'Jewelry', ARRAY['Rings','Necklaces','Bracelets','Earrings','Watches','Brooches & Pins']),
-      (1, 'Clothing', ARRAY['Tops','Bottoms','Dresses','Outerwear','Activewear','Swimwear','Intimates','Sleepwear']),
-      (2, 'Shoes', ARRAY['Sneakers','Boots','Heels','Sandals','Flats','Athletic']),
-      (3, 'Beauty & Skincare', ARRAY['Face','Eyes','Lips','Body','Hair','Nails','Fragrance','Tools & Applicators']),
-      (4, 'Bags & Accessories', ARRAY['Handbags','Wallets','Belts','Scarves','Hats','Sunglasses','Phone Cases']),
-      (5, 'Home', ARRAY['Kitchen','Bedroom','Bathroom','Living Room','Decor','Storage & Organization']),
-      (6, 'Kids & Baby', ARRAY['Clothing','Toys','Gear','Nursery','Feeding','Diapers & Bath']),
-      (7, 'Health & Wellness', ARRAY['Supplements','Fitness Equipment','Personal Care','Medical & First Aid']),
-      (8, 'Electronics', ARRAY['Devices','Accessories','Chargers & Cables','Smart Home']),
-      (9, 'Groceries & Consumables', ARRAY['Pantry','Beverages','Snacks','Household Supplies','Pet Supplies']),
-      (10, 'Digital', ARRAY['Software','Subscriptions','Digital Media','Domain Names','Apps','Games','E-books']),
-      (11, 'Services', ARRAY['Repairs & Maintenance','Professional Services','Memberships','Insurance','Utilities']),
-      (12, 'Firearms & Accessories', ARRAY['Firearms','Optics & Sights','Parts & Upgrades','Ammunition','Holsters & Storage','Cleaning & Maintenance'])
+      (0, 'Tools', ARRAY['Hand Tools','Power Tools','Sockets & Ratchets','Wrenches','Pliers & Cutters','Measuring & Layout','Tool Storage','Fasteners & Hardware','Batteries & Chargers','Safety & PPE']),
+      (1, 'Firearms & Weapons', ARRAY['Rifles','Shotguns','Pistols','Suppressors & NFA','Optics & Sights','Parts & Upgrades','Magazines','Ammunition','Holsters & Cases','Cleaning & Maintenance','Lights & Lasers','Training & Targets']),
+      (2, 'Clothing', ARRAY['Tops','Bottoms','Outerwear','Activewear','Tactical & Workwear','Underwear & Base Layers','Sleepwear','Formalwear','Jewelry & Watches','Accessories']),
+      (3, 'Shoes & Footwear', ARRAY['Sneakers','Boots','Sandals','Athletic & Cycling','Dress Shoes','Slippers']),
+      (4, 'Fitness & Sport', ARRAY['Gym Equipment','Weights & Bars','Racks & Rigs','Accessories','Cycling','Tennis','Outdoor & Camping','Recovery']),
+      (5, 'Electronics', ARRAY['Computers & Monitors','Audio & Speakers','Phones & Tablets','Cables & Chargers','Smart Home','Photography & Cameras','Networking']),
+      (6, 'Home & Furniture', ARRAY['Furniture','Lighting','Bedding','Kitchen','Bathroom','Storage & Organization','Decor','Appliances']),
+      (7, 'Auto & Moto', ARRAY['Car Parts & Maintenance','Motorcycle Parts','Motorcycle Gear','Jacks & Stands','Detailing & Cleaning']),
+      (8, 'Beauty & Grooming', ARRAY['Skincare','Haircare','Makeup & Cosmetics','Fragrance','Shaving & Grooming','Tools & Applicators']),
+      (9, 'Health & Medical', ARRAY['Supplements','First Aid & Medical','Personal Care','Vision & Dental']),
+      (10, 'Kids & Baby', ARRAY['Clothing','Toys','Gear & Equipment','Nursery','Feeding','Bath & Care']),
+      (11, 'Outdoor & Recreation', ARRAY['Camping & Hiking','Hunting','Fishing','Coolers & Bags','Knives & Multi-tools','Optics']),
+      (12, 'Media & Entertainment', ARRAY['Vinyl & Music','Books','Games','Streaming & Subscriptions']),
+      (13, 'Consumables & Supplies', ARRAY['Cleaning Supplies','Office Supplies','Tape & Adhesives','Pet Supplies','Groceries','Household Chemicals']),
+      (14, 'Services & Digital', ARRAY['Software','Subscriptions','Professional Services','Insurance','Memberships','Domain Names'])
     ) AS t(sort_order, cat_name, subs)
   LOOP
     INSERT INTO categories (household_id, name, sort_order, is_default)

@@ -217,6 +217,38 @@ function ImportContent() {
   const [emailFilter, setEmailFilter] = useState<"new" | "imported" | "all">("new")
   const [bulkLocationId, setBulkLocationId] = useState("")
   const SESSION_KEY = "eyo_import_session"
+  const EXCLUDED_VENDORS_KEY = "eyo_excluded_vendors"
+
+  // Persistent vendor exclusion list
+  const [excludedVendors, setExcludedVendors] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(EXCLUDED_VENDORS_KEY)
+      return raw ? new Set(JSON.parse(raw)) : new Set()
+    } catch { return new Set() }
+  })
+
+  const addExcludedVendor = (vendor: string) => {
+    setExcludedVendors((prev) => {
+      const next = new Set(prev)
+      next.add(vendor.toLowerCase().trim())
+      localStorage.setItem(EXCLUDED_VENDORS_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  const removeExcludedVendor = (vendor: string) => {
+    setExcludedVendors((prev) => {
+      const next = new Set(prev)
+      next.delete(vendor.toLowerCase().trim())
+      localStorage.setItem(EXCLUDED_VENDORS_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  const isVendorExcluded = (from: string): boolean => {
+    const lower = from.toLowerCase()
+    return [...excludedVendors].some((v) => lower.includes(v))
+  }
 
   // Pipeline batch processing with pages
   const BATCH_SIZE = 20
@@ -491,6 +523,11 @@ function ImportContent() {
     const rejected: RejectedEmail[] = []
 
     for (const email of batchEmails) {
+      // Skip excluded vendors
+      if (isVendorExcluded(email.from) || isVendorExcluded(email.subject)) {
+        rejected.push({ id: email.id, subject: email.subject, from: email.from, date: email.date, reason: "excluded vendor", bodyText: "" })
+        continue
+      }
       const emailType = classifyEmail(email.subject)
       if (emailType !== "order" && emailType !== "unknown") {
         rejected.push({ id: email.id, subject: email.subject, from: email.from, date: email.date, reason: emailType, bodyText: "" })
@@ -992,6 +1029,21 @@ function ImportContent() {
             </div>
           ) : (
             <>
+              {/* Excluded vendors */}
+              {excludedVendors.size > 0 && (
+                <div className="rounded-lg border bg-secondary/30 p-2.5 flex items-start gap-2">
+                  <span className="text-[11px] text-muted-foreground shrink-0 pt-0.5">Excluded:</span>
+                  <div className="flex flex-wrap gap-1 flex-1">
+                    {[...excludedVendors].map((v) => (
+                      <span key={v} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-destructive/10 text-destructive">
+                        {v}
+                        <button type="button" onClick={() => removeExcludedVendor(v)} className="hover:text-foreground">&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Import filter */}
               {(() => {
                 const importedCount = emails.filter((e) => e.alreadyImported).length
@@ -1405,8 +1457,25 @@ function ImportContent() {
                       </div>
                     )}
 
-                    {/* Show first product per email only gets the email body disclosure */}
-                    {(i === 0 || drafts[i - 1]?.emailId !== draft.emailId) && draft.emailBody && (
+                    {/* Exclude vendor */}
+                    {draft.retailer && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          addExcludedVendor(draft.retailer)
+                          // Also uncheck all products from this vendor on current page
+                          setDrafts((prev) => prev.map((d) =>
+                            d.retailer.toLowerCase() === draft.retailer.toLowerCase() ? { ...d, included: false } : d
+                          ))
+                        }}
+                        className="text-[11px] text-destructive/70 hover:text-destructive hover:underline"
+                      >
+                        Always exclude {draft.retailer}
+                      </button>
+                    )}
+
+                    {/* Email body on every product */}
+                    {draft.emailBody && (
                       <details className="group">
                         <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors flex items-center gap-1">
                           <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
