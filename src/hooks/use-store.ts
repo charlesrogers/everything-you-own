@@ -93,6 +93,10 @@ export function useStore() {
         getUnsortedCount: async () => wmsLocalStore.getUnsortedCount(),
         getItemCountsByLocation: async () => wmsLocalStore.getItemCountsByLocation(),
         getLocationTemplates: async () => wmsLocalStore.getLocationTemplates(),
+        createLocationTemplate: async (t: { name: string; brand?: string; category: string; width_in?: number; depth_in?: number; height_in?: number; volume_gal?: number }) => {
+          const tpl = { id: `custom_${Date.now()}`, name: t.name, brand: t.brand ?? null, category: t.category, width_in: t.width_in ?? null, depth_in: t.depth_in ?? null, height_in: t.height_in ?? null, volume_gal: t.volume_gal ?? null, household_id: null, default_compartments: null }
+          return tpl
+        },
         seedBasementStorage: async () => wmsLocalStore.seedBasementStorage(),
         migrateSamlaOrientation: async () => wmsLocalStore.migrateSamlaOrientation(),
         logUsage: async (input: LogUsageInput) => wmsLocalStore.logUsage(input),
@@ -177,6 +181,7 @@ export function useStore() {
       getUnsortedCount: () => wmsStore.getUnsortedCount(sb, hid),
       getItemCountsByLocation: () => wmsStore.getItemCountsByLocation(sb, hid),
       getLocationTemplates: () => wmsStore.getLocationTemplates(sb),
+      createLocationTemplate: (t: { name: string; brand?: string; category: string; width_in?: number; depth_in?: number; height_in?: number; volume_gal?: number }) => wmsStore.createLocationTemplate(sb, hid, t),
       seedBasementStorage: () => wmsStore.seedBasementStorage(sb, hid),
       migrateSamlaOrientation: () => wmsStore.migrateSamlaOrientation(sb, hid),
       logUsage: (input: LogUsageInput) => wmsStore.logUsage(sb, hid, uid, input),

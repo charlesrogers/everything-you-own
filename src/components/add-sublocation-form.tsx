@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Plus, Package, Server, Inbox, Minus, DoorClosed, Grid3X3, GripHorizontal, Square, ChevronRight, Check } from "lucide-react"
-import type { LocationType, UnitSubtype, CreateLocationInput } from "@/lib/wms-types"
+import type { LocationType, UnitSubtype, CreateLocationInput, LocationTemplate } from "@/lib/wms-types"
 import { SAMLA_BINS } from "@/lib/wms-constants"
 
 // Context-aware options based on parent type
@@ -103,8 +103,10 @@ interface AddSublocationFormProps {
   parentName?: string
   parentDepthIn?: number | null
   existingChildCount: number
+  binTemplates?: LocationTemplate[]
   onAdd: (input: CreateLocationInput) => Promise<string | void>
   onCancel: () => void
+  onCreateTemplate?: (t: { name: string; brand?: string; category: string; width_in?: number; depth_in?: number; height_in?: number; volume_gal?: number }) => Promise<LocationTemplate>
   /** Called to get child count + type info for a newly created location */
   onGetLocation?: (id: string) => Promise<{ location_type: LocationType; unit_subtype: UnitSubtype | null; name: string } | undefined>
 }
@@ -116,8 +118,10 @@ export function AddSublocationForm({
   parentName,
   parentDepthIn,
   existingChildCount,
+  binTemplates,
   onAdd,
   onCancel,
+  onCreateTemplate,
   onGetLocation,
 }: AddSublocationFormProps) {
   // Track context stack so we can drill in without navigating
@@ -143,6 +147,18 @@ export function AddSublocationForm({
   const [lastCreatedSubtype, setLastCreatedSubtype] = useState<UnitSubtype | null>(null)
   const [lastCreatedName, setLastCreatedName] = useState("")
   const [showPostSave, setShowPostSave] = useState(false)
+  // Custom template creation
+  const [showCreateTemplate, setShowCreateTemplate] = useState(false)
+  const [newTplName, setNewTplName] = useState("")
+  const [newTplBrand, setNewTplBrand] = useState("")
+  const [newTplWidth, setNewTplWidth] = useState("")
+  const [newTplDepth, setNewTplDepth] = useState("")
+  const [newTplHeight, setNewTplHeight] = useState("")
+  const [creatingTemplate, setCreatingTemplate] = useState(false)
+  const [localTemplates, setLocalTemplates] = useState<LocationTemplate[]>([])
+
+  // Use DB templates if provided, otherwise fall back to hard-coded SAMLA_BINS
+  const allBinTemplates = (binTemplates ?? [...localTemplates]).filter((t) => t.category === "bin")
 
   const childOptions = getChildOptions(currentCtx.type, currentCtx.subtype)
 
@@ -164,13 +180,12 @@ export function AddSublocationForm({
 
   const handleBinSelect = (binId: string) => {
     setSelectedBinTemplate(binId)
-    // Don't auto-fill name — let user type a descriptive name like "Holiday Decorations"
     setName("")
     // Auto-select depth row based on bin depth vs shelf depth
-    const bin = SAMLA_BINS.find((b) => b.id === binId)
-    if (bin && parentDepthIn) {
-      // If bin depth fills ≥85% of shelf depth, it's full-depth
-      setDepthRow(bin.depthIn >= parentDepthIn * 0.85 ? "full" : "front")
+    const dbTpl = allBinTemplates.find((t) => t.id === binId)
+    const binDepth = dbTpl?.depth_in ?? SAMLA_BINS.find((b) => b.id === binId)?.depthIn
+    if (binDepth && parentDepthIn) {
+      setDepthRow(binDepth >= parentDepthIn * 0.85 ? "full" : "front")
     }
   }
 
@@ -178,7 +193,12 @@ export function AddSublocationForm({
     if (!selectedType || !name.trim()) return
     setSaving(true)
 
-    const bin = selectedBinTemplate ? SAMLA_OPTIONS.find((b) => b.id === selectedBinTemplate) : null
+    // Look up template dimensions from DB templates or fallback to SAMLA_BINS
+    const dbTpl = selectedBinTemplate ? allBinTemplates.find((t) => t.id === selectedBinTemplate) : null
+    const fallbackBin = selectedBinTemplate ? SAMLA_BINS.find((b) => b.id === selectedBinTemplate) : null
+    const tplWidth = dbTpl?.width_in ?? fallbackBin?.widthIn ?? null
+    const tplDepth = dbTpl?.depth_in ?? fallbackBin?.depthIn ?? null
+    const tplHeight = dbTpl?.height_in ?? fallbackBin?.heightIn ?? null
     let lastId: string | null = null
 
     for (let i = 0; i < quantity; i++) {
@@ -192,9 +212,9 @@ export function AddSublocationForm({
         name: itemName,
         label: label.trim() || null,
         template_id: selectedBinTemplate,
-        width_in: bin?.widthIn ?? (dimWidth ? parseFloat(dimWidth) : null),
-        depth_in: bin?.depthIn ?? (dimDepth ? parseFloat(dimDepth) : null),
-        height_in: bin?.heightIn ?? (dimHeight ? parseFloat(dimHeight) : null),
+        width_in: tplWidth ?? (dimWidth ? parseFloat(dimWidth) : null),
+        depth_in: tplDepth ?? (dimDepth ? parseFloat(dimDepth) : null),
+        height_in: tplHeight ?? (dimHeight ? parseFloat(dimHeight) : null),
         sort_order: currentCtx.childCount + i,
         metadata: selectedSubtype === "bin" && depthRow !== "front" ? { depth_row: depthRow } : undefined,
       })
@@ -371,47 +391,123 @@ export function AddSublocationForm({
       </div>
       <div className="p-4 space-y-4">
         {/* Bin template picker */}
-        {isBin && (
-          <div>
-            <label className="text-[12px] font-medium text-muted-foreground mb-2 block">
-              Bin Type
-            </label>
-            <div className="grid grid-cols-1 gap-1.5">
-              {SAMLA_OPTIONS.map((bin) => (
+        {isBin && (() => {
+          // Group templates by brand
+          const byBrand = new Map<string, LocationTemplate[]>()
+          for (const t of allBinTemplates.length > 0 ? allBinTemplates : SAMLA_BINS.map((b) => ({ ...b, id: b.id, name: b.name, brand: null as string | null, category: 'bin', width_in: b.widthIn, depth_in: b.depthIn, height_in: b.heightIn, volume_gal: b.volumeGal, household_id: null, default_compartments: null }))) {
+            const brand = t.brand ?? "Other"
+            if (!byBrand.has(brand)) byBrand.set(brand, [])
+            byBrand.get(brand)!.push(t)
+          }
+          const samlaInfo = SAMLA_DESCRIPTIVE
+          return (
+            <div>
+              <label className="text-[12px] font-medium text-muted-foreground mb-2 block">
+                Bin Type
+              </label>
+              <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                {[...byBrand.entries()].map(([brand, templates]) => (
+                  <div key={brand}>
+                    <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 px-1">{brand}</div>
+                    <div className="grid grid-cols-1 gap-1">
+                      {templates.map((t) => {
+                        const info = samlaInfo[t.id]
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => handleBinSelect(t.id)}
+                            className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-left transition-colors ${
+                              selectedBinTemplate === t.id ? "border-primary bg-primary/5" : "border-transparent hover:bg-accent"
+                            }`}
+                          >
+                            <Package className={`size-4 shrink-0 ${selectedBinTemplate === t.id ? "text-primary" : "text-muted-foreground"}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[13px] font-medium">{info?.nickname ? `${info.nickname} (${t.volume_gal} gal)` : t.name}</div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {t.width_in}&quot; × {t.depth_in}&quot; × {t.height_in}&quot;
+                                {t.volume_gal ? ` · ${t.volume_gal} gal` : ""}
+                              </div>
+                              {info?.useCase && <div className="text-[10px] text-muted-foreground/70">{info.useCase}</div>}
+                              {t.household_id && <span className="text-[9px] text-primary/60 font-medium">Custom</span>}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Custom / no template */}
+              <div className="mt-2 space-y-1.5">
                 <button
-                  key={bin.id}
-                  onClick={() => handleBinSelect(bin.id)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${
-                    selectedBinTemplate === bin.id
-                      ? "border-primary bg-primary/5"
-                      : "border-transparent hover:bg-accent"
+                  onClick={() => { setSelectedBinTemplate(null); setName(""); setShowCreateTemplate(false) }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border text-left transition-colors ${
+                    selectedBinTemplate === null && !showCreateTemplate ? "border-primary bg-primary/5" : "border-transparent hover:bg-accent"
                   }`}
                 >
-                  <Package className={`size-4 shrink-0 ${selectedBinTemplate === bin.id ? "text-primary" : "text-muted-foreground"}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium">{bin.name}</div>
-                    <div className="text-[11px] text-muted-foreground">{bin.subtitle}</div>
-                    <div className="text-[10px] text-muted-foreground/70 mt-0.5">{bin.useCase}</div>
+                  <Package className="size-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <div className="text-[13px] font-medium">Custom bin (no saved type)</div>
+                    <div className="text-[11px] text-muted-foreground">Enter dimensions manually below</div>
                   </div>
                 </button>
-              ))}
-              <button
-                onClick={() => { setSelectedBinTemplate(null); setName("") }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-left transition-colors ${
-                  selectedBinTemplate === null && name
-                    ? "border-primary bg-primary/5"
-                    : "border-transparent hover:bg-accent"
-                }`}
-              >
-                <Package className="size-4 shrink-0 text-muted-foreground" />
-                <div>
-                  <div className="text-[13px] font-medium">Custom bin or box</div>
-                  <div className="text-[11px] text-muted-foreground">Any other container</div>
-                </div>
-              </button>
+
+                {/* Save as new type */}
+                {onCreateTemplate && (
+                  showCreateTemplate ? (
+                    <div className="rounded-lg border bg-secondary/30 p-3 space-y-2">
+                      <div className="text-[12px] font-semibold">Save new bin type</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input value={newTplName} onChange={(e) => setNewTplName(e.target.value)} placeholder="Name (e.g., Pelican 1200)" className="rounded-lg border bg-background px-2 py-1.5 text-[12px] col-span-2" />
+                        <input value={newTplBrand} onChange={(e) => setNewTplBrand(e.target.value)} placeholder="Brand (e.g., Pelican)" className="rounded-lg border bg-background px-2 py-1.5 text-[12px] col-span-2" />
+                        <input type="number" step="0.25" value={newTplWidth} onChange={(e) => setNewTplWidth(e.target.value)} placeholder='Width (in)' className="rounded-lg border bg-background px-2 py-1.5 text-[12px]" />
+                        <input type="number" step="0.25" value={newTplDepth} onChange={(e) => setNewTplDepth(e.target.value)} placeholder='Depth (in)' className="rounded-lg border bg-background px-2 py-1.5 text-[12px]" />
+                        <input type="number" step="0.25" value={newTplHeight} onChange={(e) => setNewTplHeight(e.target.value)} placeholder='Height (in)' className="rounded-lg border bg-background px-2 py-1.5 text-[12px]" />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          disabled={!newTplName.trim() || creatingTemplate}
+                          onClick={async () => {
+                            setCreatingTemplate(true)
+                            const created = await onCreateTemplate({
+                              name: newTplName.trim(),
+                              brand: newTplBrand.trim() || undefined,
+                              category: "bin",
+                              width_in: newTplWidth ? parseFloat(newTplWidth) : undefined,
+                              depth_in: newTplDepth ? parseFloat(newTplDepth) : undefined,
+                              height_in: newTplHeight ? parseFloat(newTplHeight) : undefined,
+                            })
+                            setLocalTemplates((prev) => [...prev, created])
+                            setSelectedBinTemplate(created.id)
+                            setShowCreateTemplate(false)
+                            setNewTplName(""); setNewTplBrand(""); setNewTplWidth(""); setNewTplDepth(""); setNewTplHeight("")
+                            setCreatingTemplate(false)
+                          }}
+                          className="rounded-lg bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          {creatingTemplate ? "Saving..." : "Save Type"}
+                        </button>
+                        <button onClick={() => setShowCreateTemplate(false)} className="rounded-lg border px-3 py-1 text-[11px] font-medium hover:bg-accent">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowCreateTemplate(true)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-dashed border-muted-foreground/20 text-left hover:bg-accent/50 transition-colors"
+                    >
+                      <Plus className="size-4 shrink-0 text-muted-foreground" />
+                      <div>
+                        <div className="text-[13px] font-medium text-muted-foreground">Save a new bin type</div>
+                        <div className="text-[11px] text-muted-foreground/70">Create a reusable template with brand & dimensions</div>
+                      </div>
+                    </button>
+                  )
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Name */}
         <div>

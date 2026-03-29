@@ -28,7 +28,7 @@ import { LocationTree } from "@/components/location-tree"
 import { AddSublocationForm } from "@/components/add-sublocation-form"
 import { RackVisualization } from "@/components/rack-visualization"
 import { RoomVisualization } from "@/components/room-visualization"
-import { ShelfOrganizer } from "@/components/shelf-organizer"
+
 
 function getAllDescendants(parentId: string, allLocs: import("@/lib/wms-types").Location[]): import("@/lib/wms-types").Location[] {
   const directKids = allLocs.filter((l) => l.parent_id === parentId)
@@ -54,6 +54,7 @@ export default function LocationDetailPage() {
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({})
   const [shelfItemsByPosition, setShelfItemsByPosition] = useState<Record<string, { front: Record<string, number>; back: Record<string, number> }>>({})
   const [loading, setLoading] = useState(true)
+  const [binTemplates, setBinTemplates] = useState<import("@/lib/wms-types").LocationTemplate[]>([])
   const [showAddChild, setShowAddChild] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [editingDetails, setEditingDetails] = useState(false)
@@ -108,6 +109,9 @@ export default function LocationDetailPage() {
       setChildLocations(kids)
       const allDescendants = getAllDescendants(locationId, allLocs)
       setChildren(buildLocationTree(allDescendants))
+
+      // Load bin templates
+      store.getLocationTemplates().then((t) => setBinTemplates(t)).catch(() => {})
     } catch (err) {
       console.error("Failed to load location:", err)
     } finally {
@@ -540,16 +544,6 @@ export default function LocationDetailPage() {
       )}
 
 
-      {/* Shelf organizer — column-based drag layout for bins */}
-      {location.unit_subtype === "shelf" && childLocations.length > 0 && (
-        <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] p-4">
-          <ShelfOrganizer
-            shelf={{ ...location, children }}
-            itemCounts={itemCounts}
-            onMoveBin={handleMoveBinToCol}
-          />
-        </div>
-      )}
 
       {/* Sub-locations */}
       <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
@@ -582,8 +576,14 @@ export default function LocationDetailPage() {
               parentName={location.name}
               parentDepthIn={location.depth_in}
               existingChildCount={childLocations.length}
+              binTemplates={binTemplates}
               onAdd={handleAddChild}
               onCancel={() => setShowAddChild(false)}
+              onCreateTemplate={async (t) => {
+                const created = await store.createLocationTemplate(t)
+                setBinTemplates((prev) => [...prev, created])
+                return created
+              }}
             />
           </div>
         )}
