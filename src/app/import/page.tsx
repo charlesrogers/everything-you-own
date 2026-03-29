@@ -208,93 +208,135 @@ function ImportContent() {
     setProcessing(true)
     setProcessProgress({ current: 0, total: selected.length })
 
-    // Collect drafts grouped by order key for cross-email dedup
-    const orderGroups = new Map<string, { emailId: string; drafts: DraftProduct[] }>()
-    const noOrderDrafts: DraftProduct[] = []
+    // Step 1: Fetch all email bodies
+    const emailBodies: { id: string; subject: string; from: string; date: string; body: string; bodyText: string }[] = []
 
     for (let i = 0; i < selected.length; i++) {
       const email = selected[i]
       setProcessProgress({ current: i + 1, total: selected.length })
 
-      // Skip non-order emails (double-check beyond Gmail query filter)
       const emailType = classifyEmail(email.subject)
       if (emailType !== "order" && emailType !== "unknown") continue
 
       try {
         const html = await getMessageBody(token, email.id)
-        const result = parseReceiptEmail(html, email.subject, email.from, email.date)
-        const emailText = htmlToText(html)
-
-        const emailDrafts: DraftProduct[] = []
-        for (const product of result.products) {
-          const { categoryId, subcategoryId } = mapCategoryGuess(product.category_guess)
-
-          const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
-          const duplicateWarning =
-            dupes.exact.length > 0
-              ? `Exact match: ${dupes.exact[0].name}`
-              : dupes.fuzzy.length > 0
-                ? `Similar: ${dupes.fuzzy[0].name}`
-                : null
-
-          emailDrafts.push({
-            emailId: email.id,
-            name: product.name,
-            brand: product.brand || "",
-            price: product.price?.toString() || "",
-            retailer: product.retailer,
-            order_id: product.order_id || "",
-            purchase_date: product.purchase_date || "",
-            category_id: categoryId,
-            subcategory_id: subcategoryId,
-            ownership: "mine",
-            is_consumable: product.is_consumable,
-            source_url: product.source_url || "",
-            included: !duplicateWarning?.startsWith("Exact"),
-            duplicateWarning,
-            emailBody: emailText,
-            tags: [],
-          })
-        }
-
-        if (emailDrafts.length === 0) continue
-
-        // Group by retailer + order_id for cross-email dedup
-        const orderId = emailDrafts[0]?.order_id
-        const retailer = emailDrafts[0]?.retailer
-        if (orderId && retailer) {
-          const key = `${retailer}::${orderId}`.toLowerCase()
-          const existing = orderGroups.get(key)
-          if (!existing) {
-            orderGroups.set(key, { emailId: email.id, drafts: emailDrafts })
-          } else {
-            // Keep the version with more products or more prices
-            const existingPriceCount = existing.drafts.filter((d) => d.price).length
-            const newPriceCount = emailDrafts.filter((d) => d.price).length
-            if (emailDrafts.length > existing.drafts.length || newPriceCount > existingPriceCount) {
-              orderGroups.set(key, { emailId: email.id, drafts: emailDrafts })
-            }
-            // Otherwise keep existing (first email wins)
-          }
-        } else {
-          noOrderDrafts.push(...emailDrafts)
-        }
+        emailBodies.push({
+          id: email.id,
+          subject: email.subject,
+          from: email.from,
+          date: email.date,
+          body: htmlToText(html),
+          bodyText: htmlToText(html),
+        })
       } catch (e) {
         if (e instanceof Error && e.message === "SESSION_EXPIRED") {
           setError("Session expired. Please reconnect.")
           setPhase("connect")
           return
         }
-        console.error(`Failed to process email ${email.id}:`, e)
+        console.error(`Failed to fetch email ${email.id}:`, e)
       }
     }
 
-    // Flatten deduped groups
-    const allDrafts: DraftProduct[] = []
-    for (const group of orderGroups.values()) {
-      allDrafts.push(...group.drafts)
+    if (emailBodies.length === 0) {
+      setDrafts([])
+      setProcessing(false)
+      return
     }
-    allDrafts.push(...noOrderDrafts)
+
+    // Step 2: Send to Claude API for extraction (batch in groups of 10)
+    const allDrafts: DraftProduct[] = []
+    const batchSize = 10
+
+    for (let b = 0; b < emailBodies.length; b += batchSize) {
+      const batch = emailBodies.slice(b, b + batchSize)
+      try {
+        const res = await fetch("/api/parse-receipts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            emails: batch.map(e => ({
+              subject: e.subject,
+              from: e.from,
+              date: e.date,
+              body: e.body,
+            })),
+          }),
+        })
+        const data = await res.json()
+
+        if (data.products && Array.isArray(data.products)) {
+          for (const product of data.products) {
+            const { categoryId, subcategoryId } = mapCategoryGuess(product.category || null)
+
+            const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
+            const duplicateWarning =
+              dupes.exact.length > 0
+                ? `Exact match: ${dupes.exact[0].name}`
+                : dupes.fuzzy.length > 0
+                  ? `Similar: ${dupes.fuzzy[0].name}`
+                  : null
+
+            // Find which email this product came from (best guess by retailer/date)
+            const matchEmail = batch.find(e =>
+              e.from.toLowerCase().includes((product.retailer || "").toLowerCase()) ||
+              e.subject.toLowerCase().includes((product.name || "").toLowerCase().slice(0, 20))
+            ) || batch[0]
+
+            allDrafts.push({
+              emailId: matchEmail.id,
+              name: product.name || "",
+              brand: product.brand || "",
+              price: product.price?.toString() || "",
+              retailer: product.retailer || "",
+              order_id: product.order_id || "",
+              purchase_date: product.purchase_date || "",
+              category_id: categoryId,
+              subcategory_id: subcategoryId,
+              ownership: "mine",
+              is_consumable: product.is_consumable || false,
+              source_url: "",
+              included: !duplicateWarning?.startsWith("Exact"),
+              duplicateWarning,
+              emailBody: matchEmail.bodyText,
+              tags: [],
+            })
+          }
+        }
+      } catch (e) {
+        console.error("Claude API error, falling back to regex for batch:", e)
+        // Fallback: use regex parser for this batch
+        for (const email of batch) {
+          const result = parseReceiptEmail(email.body, email.subject, email.from, email.date)
+          for (const product of result.products) {
+            const { categoryId, subcategoryId } = mapCategoryGuess(product.category_guess)
+            const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
+            const duplicateWarning =
+              dupes.exact.length > 0 ? `Exact match: ${dupes.exact[0].name}`
+              : dupes.fuzzy.length > 0 ? `Similar: ${dupes.fuzzy[0].name}`
+              : null
+            allDrafts.push({
+              emailId: email.id,
+              name: product.name,
+              brand: product.brand || "",
+              price: product.price?.toString() || "",
+              retailer: product.retailer,
+              order_id: product.order_id || "",
+              purchase_date: product.purchase_date || "",
+              category_id: categoryId,
+              subcategory_id: subcategoryId,
+              ownership: "mine",
+              is_consumable: product.is_consumable,
+              source_url: product.source_url || "",
+              included: !duplicateWarning?.startsWith("Exact"),
+              duplicateWarning,
+              emailBody: email.bodyText,
+              tags: [],
+            })
+          }
+        }
+      }
+    }
 
     setDrafts(allDrafts)
     setProcessing(false)
