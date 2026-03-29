@@ -43,6 +43,13 @@ interface DraftProduct {
   duplicateWarning: string | null
   emailBody: string
   tags: string[]
+  location_id: string
+}
+
+interface ImportLocation {
+  id: string
+  name: string
+  path: string
 }
 
 export default function ImportPage() {
@@ -72,6 +79,8 @@ function ImportContent() {
   const [processProgress, setProcessProgress] = useState({ current: 0, total: 0 })
   const [processing, setProcessing] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [importLocations, setImportLocations] = useState<ImportLocation[]>([])
+  const [bulkLocationId, setBulkLocationId] = useState("")
 
   // Shared
   const [categories, setCategories] = useState<Category[]>([])
@@ -88,6 +97,22 @@ function ImportContent() {
       ])
       setCategories(cats)
       setSubcategories(subs)
+
+      // Load locations for bin picker
+      try {
+        const res = await fetch("/api/storage")
+        const data = await res.json()
+        const locs = (data.locations ?? []) as Array<{ id: string; name: string; parent_id: string | null; unit_subtype: string | null }>
+        const locMap = new Map(locs.map((l) => [l.id, l]))
+        function getPath(id: string): string {
+          const parts: string[] = []
+          let cur = locMap.get(id)
+          while (cur) { parts.unshift(cur.name); cur = cur.parent_id ? locMap.get(cur.parent_id) : undefined }
+          return parts.join(" \u203a ")
+        }
+        const bins = locs.filter((l) => l.unit_subtype === "bin").map((l) => ({ id: l.id, name: l.name, path: getPath(l.id) }))
+        setImportLocations(bins)
+      } catch {}
     }
     init()
   }, [store, householdId])
@@ -303,6 +328,7 @@ function ImportContent() {
               duplicateWarning,
               emailBody: matchEmail.bodyText,
               tags: [],
+              location_id: "",
             })
           }
         }
@@ -335,6 +361,7 @@ function ImportContent() {
               duplicateWarning,
               emailBody: email.bodyText,
               tags: [],
+              location_id: "",
             })
           }
         }
@@ -362,7 +389,7 @@ function ImportContent() {
     const emailIds = new Set<string>()
 
     for (const draft of toSave) {
-      await store.addProduct({
+      const newProduct = await store.addProduct({
         name: draft.name,
         brand: draft.brand || undefined,
         category_id: draft.category_id,
@@ -379,6 +406,11 @@ function ImportContent() {
         currency: "USD",
         tags: draft.tags,
       })
+      // Assign to location if specified
+      if (draft.location_id) {
+        await store.addProductToLocation({ product_id: newProduct.id, location_id: draft.location_id })
+        localStorage.setItem("eyo_last_bin_id", draft.location_id)
+      }
       emailIds.add(draft.emailId)
     }
 
@@ -732,6 +764,43 @@ function ImportContent() {
                 </p>
               </div>
 
+              {/* Bulk location assignment */}
+              {importLocations.length > 0 && (
+                <div className="rounded-lg border bg-secondary/30 p-3 flex items-center gap-3">
+                  <span className="text-[12px] font-medium shrink-0">Set all to:</span>
+                  <select
+                    value={bulkLocationId}
+                    onChange={(e) => {
+                      const locId = e.target.value
+                      setBulkLocationId(locId)
+                      setDrafts((prev) => prev.map((d) => ({ ...d, location_id: locId })))
+                    }}
+                    className="flex-1 rounded-lg border bg-background px-3 py-1.5 text-[12px]"
+                  >
+                    <option value="">No location</option>
+                    {importLocations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>{loc.path}</option>
+                    ))}
+                  </select>
+                  {(() => {
+                    const lastBinId = typeof window !== "undefined" ? localStorage.getItem("eyo_last_bin_id") : null
+                    const lastBin = lastBinId ? importLocations.find((l) => l.id === lastBinId) : null
+                    return lastBin ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkLocationId(lastBin.id)
+                          setDrafts((prev) => prev.map((d) => ({ ...d, location_id: lastBin.id })))
+                        }}
+                        className="text-[11px] text-primary font-medium shrink-0 hover:underline"
+                      >
+                        Same as last
+                      </button>
+                    ) : null
+                  })()}
+                </div>
+              )}
+
               <div className="space-y-3">
                 {drafts.map((draft, i) => (
                   <div
@@ -875,6 +944,23 @@ function ImportContent() {
                         </button>
                       ))}
                     </div>
+
+                    {/* Storage location */}
+                    {importLocations.length > 0 && (
+                      <div>
+                        <label className="text-[11px] text-muted-foreground">Storage Location</label>
+                        <select
+                          value={draft.location_id}
+                          onChange={(e) => updateDraft(i, "location_id", e.target.value)}
+                          className="w-full rounded-lg border bg-background px-3 py-1.5 text-[13px]"
+                        >
+                          <option value="">No location (unsorted)</option>
+                          {importLocations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>{loc.path}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {/* Show first product per email only gets the email body disclosure */}
                     {(i === 0 || drafts[i - 1]?.emailId !== draft.emailId) && draft.emailBody && (
