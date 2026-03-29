@@ -214,15 +214,34 @@ function ImportContent() {
   // --- Phase 3: Process & Review ---
 
   const mapCategoryGuess = useCallback(
-    (guess: string | null): { categoryId: string; subcategoryId: string } => {
-      if (guess) {
-        const cat = categories.find((c) => c.name.toLowerCase() === guess.toLowerCase())
-        if (cat) {
-          const sub = subcategories.find((s) => s.category_id === cat.id)
-          return { categoryId: cat.id, subcategoryId: sub?.id || "" }
+    (categoryGuess: string | null, subcategoryGuess?: string | null): { categoryId: string; subcategoryId: string } => {
+      if (!categoryGuess) return { categoryId: "", subcategoryId: "" }
+
+      const lower = categoryGuess.toLowerCase()
+
+      // Exact match
+      let cat = categories.find((c) => c.name.toLowerCase() === lower)
+      // Partial match (category name contains guess or vice versa)
+      if (!cat) cat = categories.find((c) => c.name.toLowerCase().includes(lower) || lower.includes(c.name.toLowerCase()))
+
+      if (cat) {
+        // Try to match subcategory
+        let sub = null
+        if (subcategoryGuess) {
+          const subLower = subcategoryGuess.toLowerCase()
+          sub = subcategories.find((s) => s.category_id === cat!.id && s.name.toLowerCase() === subLower)
+          if (!sub) sub = subcategories.find((s) => s.category_id === cat!.id && (s.name.toLowerCase().includes(subLower) || subLower.includes(s.name.toLowerCase())))
         }
+        if (!sub) sub = subcategories.find((s) => s.category_id === cat!.id)
+        return { categoryId: cat.id, subcategoryId: sub?.id || "" }
       }
-      // No fallback — leave blank for user to pick
+
+      // Check if the guess matches a subcategory name
+      const subMatch = subcategories.find((s) => s.name.toLowerCase() === lower)
+      if (subMatch) {
+        return { categoryId: subMatch.category_id, subcategoryId: subMatch.id }
+      }
+
       return { categoryId: "", subcategoryId: "" }
     },
     [categories, subcategories]
@@ -289,13 +308,17 @@ function ImportContent() {
               date: e.date,
               body: e.body,
             })),
+            categories: categories.map(c => ({
+              name: c.name,
+              subcategories: subcategories.filter(s => s.category_id === c.id).map(s => s.name),
+            })),
           }),
         })
         const data = await res.json()
 
         if (data.products && Array.isArray(data.products)) {
           for (const product of data.products) {
-            const { categoryId, subcategoryId } = mapCategoryGuess(product.category || null)
+            const { categoryId, subcategoryId } = mapCategoryGuess(product.category || null, product.subcategory || null)
 
             const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
             const duplicateWarning =

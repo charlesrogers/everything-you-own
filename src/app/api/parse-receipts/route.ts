@@ -10,7 +10,20 @@ interface EmailInput {
   body: string
 }
 
-const SYSTEM_PROMPT = `You are a receipt parser. Given email receipt text, extract every purchased product.
+interface CategoryInput {
+  name: string
+  subcategories: string[]
+}
+
+function buildSystemPrompt(categories?: CategoryInput[]): string {
+  const categoryList = categories?.length
+    ? categories.map(c => {
+        const subs = c.subcategories.length ? ` (subcategories: ${c.subcategories.join(', ')})` : ''
+        return `${c.name}${subs}`
+      }).join('\n  ')
+    : 'Electronics, Clothing, Home, Sports & Outdoors, Health & Beauty, Food & Groceries, Tools & Hardware'
+
+  return `You are a receipt parser. Given email receipt text, extract every purchased product.
 
 Return a JSON array of objects. Each object must have these fields:
 - name: string (clean product name, no size/color suffixes unless they're part of the product identity)
@@ -20,7 +33,9 @@ Return a JSON array of objects. Each object must have these fields:
 - retailer: string (the store/seller name)
 - purchase_date: string | null (YYYY-MM-DD format)
 - order_id: string | null
-- category: string | null (one of: Electronics, Clothing, Home & Garden, Sports & Outdoors, Health & Beauty, Food & Groceries, Automotive, Tools & Hardware, Pets, Books & Media, Toys & Games, Office, or null if unsure)
+- category: string | null (MUST be one of these exact strings, or null if unsure):
+  ${categoryList}
+- subcategory: string | null (if you can identify a subcategory from the list above, use it exactly; otherwise null)
 - is_consumable: boolean (true for groceries, toiletries, supplements, ammo, etc.)
 
 Rules:
@@ -29,10 +44,11 @@ Rules:
 - Clean up product names: remove excessive SKU numbers, but keep model numbers that identify the product
 - If multiple emails are provided, process each independently
 - Return ONLY the JSON array, no markdown, no explanation`
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { emails } = await request.json() as { emails: EmailInput[] }
+    const { emails, categories } = await request.json() as { emails: EmailInput[]; categories?: CategoryInput[] }
 
     if (!emails?.length) {
       return NextResponse.json({ products: [] })
@@ -46,7 +62,7 @@ export async function POST(request: NextRequest) {
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(categories),
       messages: [{ role: 'user', content: emailBlocks }],
     })
 
