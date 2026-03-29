@@ -217,11 +217,23 @@ function ImportContent() {
   const [emailFilter, setEmailFilter] = useState<"new" | "imported" | "all">("new")
   const [bulkLocationId, setBulkLocationId] = useState("")
 
-  // Batch processing
+  // Pipeline batch processing with pages
   const BATCH_SIZE = 20
+
+  interface BatchPage {
+    pageNum: number
+    emailRange: string
+    drafts: DraftProduct[]
+    rejected: RejectedEmail[]
+    status: "processing" | "ready" | "saved"
+    savedCount: number
+  }
+
+  const [pages, setPages] = useState<BatchPage[]>([])
+  const [currentPage, setCurrentPage] = useState(0)
+  const [processingComplete, setProcessingComplete] = useState(false)
+  const [totalEmailsProcessed, setTotalEmailsProcessed] = useState(0)
   const [selectedForProcessing, setSelectedForProcessing] = useState<EmailEntry[]>([])
-  const [batchIndex, setBatchIndex] = useState(0)
-  const [totalBatches, setTotalBatches] = useState(0)
   const [allSavedCount, setAllSavedCount] = useState(0)
 
   // Shared
@@ -433,65 +445,69 @@ function ImportContent() {
     [categories, subcategories]
   )
 
+  // Pipeline: process all batches in background, present as pages
   const handleProcess = async () => {
     const selected = emails.filter((e) => e.selected)
     if (selected.length === 0) return
 
-    // Store all selected emails and start with first batch
     setSelectedForProcessing(selected)
-    const batches = Math.ceil(selected.length / BATCH_SIZE)
-    setTotalBatches(batches)
-    setBatchIndex(0)
-    setAllSavedCount(0)
-    setDrafts([])
-    setRejectedEmails([])
     setPhase("review")
+    setProcessingComplete(false)
+    setTotalEmailsProcessed(0)
+    setSaved(false)
 
-    await processBatch(selected, 0)
+    const numBatches = Math.ceil(selected.length / BATCH_SIZE)
+    const initialPages: BatchPage[] = Array.from({ length: numBatches }, (_, i) => ({
+      pageNum: i,
+      emailRange: `${i * BATCH_SIZE + 1}–${Math.min((i + 1) * BATCH_SIZE, selected.length)}`,
+      drafts: [],
+      rejected: [],
+      status: "processing" as const,
+      savedCount: 0,
+    }))
+    setPages(initialPages)
+    setCurrentPage(0)
+
+    // Process each batch sequentially in background
+    for (let i = 0; i < numBatches; i++) {
+      const batchEmails = selected.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE)
+      const { drafts: batchDrafts, rejected: batchRejected } = await processOneBatch(batchEmails)
+
+      setPages((prev) => prev.map((p, idx) =>
+        idx === i ? { ...p, drafts: batchDrafts, rejected: batchRejected, status: "ready" } : p
+      ))
+      setTotalEmailsProcessed((prev) => prev + batchEmails.length)
+
+      // Auto-navigate to first ready page if user hasn't moved
+      if (i === 0) setCurrentPage(0)
+    }
+    setProcessingComplete(true)
   }
 
-  const processBatch = async (allSelected: EmailEntry[], startIdx: number) => {
-    const batchEmails = allSelected.slice(startIdx, startIdx + BATCH_SIZE)
-    if (batchEmails.length === 0) return
-
-    setProcessing(true)
-    setProcessProgress({ current: 0, total: batchEmails.length })
-
-    // Step 1: Fetch email bodies for this batch
+  // Process a single batch of emails → returns drafts + rejected
+  const processOneBatch = async (batchEmails: EmailEntry[]): Promise<{ drafts: DraftProduct[]; rejected: RejectedEmail[] }> => {
     const emailBodies: { id: string; subject: string; from: string; date: string; body: string; bodyText: string }[] = []
     const rejected: RejectedEmail[] = []
 
-    for (let i = 0; i < batchEmails.length; i++) {
-      const email = batchEmails[i]
-      setProcessProgress({ current: i + 1, total: batchEmails.length })
-
+    for (const email of batchEmails) {
       const emailType = classifyEmail(email.subject)
       if (emailType !== "order" && emailType !== "unknown") {
         rejected.push({ id: email.id, subject: email.subject, from: email.from, date: email.date, reason: emailType, bodyText: "" })
         continue
       }
-
       try {
         const html = await getMessageBody(token, email.id)
-        emailBodies.push({
-          id: email.id,
-          subject: email.subject,
-          from: email.from,
-          date: email.date,
-          body: htmlToText(html),
-          bodyText: htmlToText(html),
-        })
+        emailBodies.push({ id: email.id, subject: email.subject, from: email.from, date: email.date, body: htmlToText(html), bodyText: htmlToText(html) })
       } catch (e) {
         if (e instanceof Error && e.message === "SESSION_EXPIRED") {
           setError("Session expired. Please reconnect.")
           setPhase("connect")
-          return
+          return { drafts: [], rejected }
         }
         console.error(`Failed to fetch email ${email.id}:`, e)
       }
     }
 
-    // Step 2: Extract products (Claude API with regex fallback)
     const batchDrafts: DraftProduct[] = []
     const apiBatchSize = 10
 
@@ -507,14 +523,12 @@ function ImportContent() {
           }),
         })
         const data = await res.json()
-
         if (data.products && Array.isArray(data.products)) {
           for (const product of data.products) {
             const { categoryId, subcategoryId } = mapCategoryGuess(product.category || null, product.subcategory || null)
             const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
             const duplicateWarning = dupes.exact.length > 0 ? `Exact match: ${dupes.exact[0].name}` : dupes.fuzzy.length > 0 ? `Similar: ${dupes.fuzzy[0].name}` : null
             const matchEmail = apiBatch.find(e => e.from.toLowerCase().includes((product.retailer || "").toLowerCase()) || e.subject.toLowerCase().includes((product.name || "").toLowerCase().slice(0, 20))) || apiBatch[0]
-
             batchDrafts.push({
               emailId: matchEmail.id, name: product.name || "", brand: product.brand || "",
               price: product.price?.toString() || "", retailer: product.retailer || "",
@@ -555,23 +569,31 @@ function ImportContent() {
         rejected.push({ id: eb.id, subject: eb.subject, from: eb.from, date: eb.date, reason: "0 products extracted", bodyText: eb.bodyText })
       }
     }
-
-    setDrafts(batchDrafts)
-    setRejectedEmails(rejected)
-    setReviewTab("products")
-    setProcessing(false)
+    return { drafts: batchDrafts, rejected }
   }
 
+  // Current page's data
+  const currentPageData = pages[currentPage]
+  const drafts = currentPageData?.drafts ?? []
+  const rejectedEmails = currentPageData?.rejected ?? []
+
   const updateDraft = (index: number, field: keyof DraftProduct, value: string | boolean | string[]) => {
-    setDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, [field]: value } : d)))
+    setPages((prev) => prev.map((p, pi) =>
+      pi === currentPage ? { ...p, drafts: p.drafts.map((d, i) => i === index ? { ...d, [field]: value } : d) } : p
+    ))
   }
 
   const toggleTag = (index: number, tag: string) => {
-    setDrafts((prev) => prev.map((d, i) => {
-      if (i !== index) return d
-      const has = d.tags.includes(tag)
-      return { ...d, tags: has ? d.tags.filter((t) => t !== tag) : [...d.tags, tag] }
-    }))
+    setPages((prev) => prev.map((p, pi) =>
+      pi === currentPage ? {
+        ...p,
+        drafts: p.drafts.map((d, i) => {
+          if (i !== index) return d
+          const has = d.tags.includes(tag)
+          return { ...d, tags: has ? d.tags.filter((t) => t !== tag) : [...d.tags, tag] }
+        })
+      } : p
+    ))
   }
 
   const handleSave = async () => {
@@ -580,23 +602,14 @@ function ImportContent() {
 
     for (const draft of toSave) {
       const newProduct = await store.addProduct({
-        name: draft.name,
-        brand: draft.brand || undefined,
-        category_id: draft.category_id,
-        subcategory_id: draft.subcategory_id,
+        name: draft.name, brand: draft.brand || undefined,
+        category_id: draft.category_id, subcategory_id: draft.subcategory_id,
         price: draft.price ? parseFloat(draft.price) : undefined,
-        retailer: draft.retailer || undefined,
-        order_id: draft.order_id || undefined,
-        purchase_date: draft.purchase_date || undefined,
-        ownership: draft.ownership,
-        is_consumable: draft.is_consumable || undefined,
-        source_url: draft.source_url || undefined,
-        visibility: "shared",
-        status: "purchased",
-        currency: "USD",
-        tags: draft.tags,
+        retailer: draft.retailer || undefined, order_id: draft.order_id || undefined,
+        purchase_date: draft.purchase_date || undefined, ownership: draft.ownership,
+        is_consumable: draft.is_consumable || undefined, source_url: draft.source_url || undefined,
+        visibility: "shared", status: "purchased", currency: "USD", tags: draft.tags,
       })
-      // Assign to location if specified
       if (draft.location_id) {
         await store.addProductToLocation({ product_id: newProduct.id, location_id: draft.location_id })
         localStorage.setItem("eyo_last_bin_id", draft.location_id)
@@ -606,35 +619,29 @@ function ImportContent() {
 
     await store.markEmailsImported([...emailIds])
 
-    // Log all processed emails — imported and rejected
     const logEntries = [
-      ...toSave.map((d) => ({
-        gmail_message_id: d.emailId,
-        email_subject: d.name,
-        email_from: d.retailer,
-        email_date: d.purchase_date,
-        status: "imported" as const,
-        products_extracted: 1,
-      })),
-      ...rejectedEmails.map((r) => ({
-        gmail_message_id: r.id,
-        email_subject: r.subject,
-        email_from: r.from,
-        email_date: r.date,
-        status: "rejected" as const,
-        rejection_reason: r.reason,
-        products_extracted: 0,
-      })),
+      ...toSave.map((d) => ({ gmail_message_id: d.emailId, email_subject: d.name, email_from: d.retailer, email_date: d.purchase_date, status: "imported" as const, products_extracted: 1 })),
+      ...rejectedEmails.map((r) => ({ gmail_message_id: r.id, email_subject: r.subject, email_from: r.from, email_date: r.date, status: "rejected" as const, rejection_reason: r.reason, products_extracted: 0 })),
     ]
     if (logEntries.length > 0 && store.logProcessedEmails) {
       await store.logProcessedEmails(logEntries).catch(() => {})
     }
 
-    setAllSavedCount((prev) => prev + toSave.length)
-    setSaved(true)
+    // Mark page as saved and advance
+    setPages((prev) => prev.map((p, i) => i === currentPage ? { ...p, status: "saved", savedCount: toSave.length } : p))
+
+    // Auto-advance to next unsaved page
+    const nextUnsaved = pages.findIndex((p, i) => i > currentPage && p.status === "ready")
+    if (nextUnsaved !== -1) {
+      setCurrentPage(nextUnsaved)
+    } else if (pages.every((p) => p.status === "saved" || p.status === "processing")) {
+      setSaved(true)
+    }
   }
 
   const includedCount = drafts.filter((d) => d.included).length
+  const totalSaved = pages.reduce((sum, p) => sum + p.savedCount, 0)
+  const totalProducts = pages.reduce((sum, p) => sum + p.drafts.length, 0)
 
   // --- Render helpers ---
 
@@ -989,26 +996,59 @@ function ImportContent() {
       {/* Phase 3: Review & Save */}
       {phase === "review" && (
         <div className="space-y-4">
-          {processing ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="size-6 animate-spin text-primary mb-3" />
-              <p className="text-[13px] font-medium">
-                Processing {processProgress.current} of {processProgress.total} emails...
-              </p>
-              <div className="w-48 h-1.5 bg-muted rounded-full mt-3 overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all"
-                  style={{ width: `${(processProgress.current / processProgress.total) * 100}%` }}
-                />
+          {/* Global progress bar */}
+          {!processingComplete && pages.length > 0 && (
+            <div className="rounded-lg border bg-secondary/30 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[12px] font-medium inline-flex items-center gap-1.5">
+                  <Loader2 className="size-3 animate-spin" />
+                  Processing {totalEmailsProcessed} of {selectedForProcessing.length} emails
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {pages.filter((p) => p.status === "ready" || p.status === "saved").length} of {pages.length} pages ready
+                </span>
+              </div>
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${(totalEmailsProcessed / selectedForProcessing.length) * 100}%` }} />
               </div>
             </div>
-          ) : saved ? (
+          )}
+
+          {/* Page tabs */}
+          {pages.length > 1 && (
+            <div className="flex gap-1 flex-wrap">
+              {pages.map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => p.status !== "processing" && setCurrentPage(i)}
+                  disabled={p.status === "processing"}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                    i === currentPage
+                      ? "bg-primary text-primary-foreground"
+                      : p.status === "saved"
+                      ? "bg-emerald-500/10 text-emerald-600"
+                      : p.status === "ready"
+                      ? "bg-secondary text-foreground hover:bg-accent"
+                      : "bg-muted text-muted-foreground/50"
+                  }`}
+                >
+                  {p.status === "saved" ? "✓ " : p.status === "processing" ? "⏳ " : ""}
+                  Page {i + 1}
+                  {p.status === "saved" && ` (${p.savedCount})`}
+                  {p.status === "ready" && ` (${p.drafts.filter((d) => d.included).length})`}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* All done */}
+          {saved && pages.every((p) => p.status === "saved") ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="size-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center mb-4">
                 <CheckCircle className="size-7 text-emerald-500" />
               </div>
               <h2 className="text-[15px] font-semibold mb-2">
-                {includedCount} product{includedCount !== 1 ? "s" : ""} imported
+                {totalSaved} product{totalSaved !== 1 ? "s" : ""} imported from {pages.length} pages
               </h2>
               <div className="flex gap-3 mt-4">
                 <Link
@@ -1030,7 +1070,12 @@ function ImportContent() {
                 </button>
               </div>
             </div>
-          ) : drafts.length === 0 ? (
+          ) : currentPageData?.status === "processing" ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="size-6 animate-spin text-primary mb-3" />
+              <p className="text-[13px] font-medium">Processing page {currentPage + 1}...</p>
+            </div>
+          ) : drafts.length === 0 && pages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Package className="size-10 text-muted-foreground/30 mb-3" />
               <p className="text-[13px] text-muted-foreground">
@@ -1282,48 +1327,35 @@ function ImportContent() {
                 ))}
               </div>
 
-              {/* Batch progress + save buttons */}
+              {/* Page save controls */}
+              {currentPageData?.status === "ready" && (
               <div className="rounded-lg border bg-secondary/30 p-3 space-y-2">
-                {totalBatches > 1 && (
-                  <div className="flex items-center justify-between text-[12px] text-muted-foreground">
-                    <span>Batch {Math.floor(batchIndex / BATCH_SIZE) + 1} of {totalBatches} &middot; {selectedForProcessing.length} emails total</span>
-                    {allSavedCount > 0 && <span>{allSavedCount} products saved so far</span>}
+                {totalSaved > 0 && (
+                  <div className="text-[12px] text-muted-foreground">
+                    {totalSaved} products saved across {pages.filter((p) => p.status === "saved").length} pages
                   </div>
                 )}
                 <div className="flex items-center justify-between">
                   <span className="text-[12px] text-muted-foreground">
-                    {includedCount} of {drafts.length} will be saved
+                    Page {currentPage + 1}: {includedCount} of {drafts.length} will be saved
                   </span>
-                  <div className="flex gap-2">
-                    {/* Save & Next Batch (if more batches remain) */}
-                    {batchIndex + BATCH_SIZE < selectedForProcessing.length && (
-                      <button
-                        onClick={async () => {
-                          await handleSave()
-                          const nextIdx = batchIndex + BATCH_SIZE
-                          setBatchIndex(nextIdx)
-                          setSaved(false)
-                          await processBatch(selectedForProcessing, nextIdx)
-                        }}
-                        disabled={includedCount === 0}
-                        className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-[13px] font-medium hover:bg-accent transition-colors disabled:opacity-50"
-                      >
-                        Save & Next Batch →
-                      </button>
-                    )}
-                    <button
-                      onClick={handleSave}
-                      disabled={includedCount === 0}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
-                    >
-                      <Check className="size-3.5" />
-                      {batchIndex + BATCH_SIZE < selectedForProcessing.length
-                        ? `Save ${includedCount} & Done`
-                        : `Save ${includedCount} Product${includedCount !== 1 ? "s" : ""}`}
-                    </button>
-                  </div>
+                  <button
+                    onClick={handleSave}
+                    disabled={includedCount === 0}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
+                  >
+                    <Check className="size-3.5" />
+                    Save Page {currentPage + 1} ({includedCount})
+                  </button>
                 </div>
               </div>
+              )}
+
+              {currentPageData?.status === "saved" ? (
+                <div className="rounded-lg border bg-emerald-500/10 p-3 text-center text-[13px] text-emerald-600 font-medium">
+                  Page {currentPage + 1} saved ({currentPageData.savedCount} products)
+                </div>
+              ) : null}
 
               </div>
               )}
