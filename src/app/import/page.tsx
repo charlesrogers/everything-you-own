@@ -206,13 +206,13 @@ function ImportContent() {
   const [loadingMore, setLoadingMore] = useState(false)
 
   // Phase 3: Review
-  const [drafts, setDrafts] = useState<DraftProduct[]>([])
+  // Note: `drafts` is derived from pages[currentPage].drafts below
   const [processProgress, setProcessProgress] = useState({ current: 0, total: 0 })
   const [processing, setProcessing] = useState(false)
   const [saved, setSaved] = useState(false)
   const [importLocations, setImportLocations] = useState<ImportLocation[]>([])
   const [locationOptions, setLocationOptions] = useState<ReturnType<typeof buildLocationOptions>>([])
-  const [rejectedEmails, setRejectedEmails] = useState<RejectedEmail[]>([])
+  // Note: rejectedEmails derived from pages[currentPage].rejected below
   const [reviewTab, setReviewTab] = useState<"products" | "rejected">("products")
   const [emailFilter, setEmailFilter] = useState<"new" | "imported" | "all">("new")
   const [bulkLocationId, setBulkLocationId] = useState("")
@@ -585,6 +585,18 @@ function ImportContent() {
   const currentPageData = pages[currentPage]
   const drafts = currentPageData?.drafts ?? []
   const rejectedEmails = currentPageData?.rejected ?? []
+
+  // Helpers to update current page's drafts/rejected (replaces old setState)
+  const setDrafts = (updater: DraftProduct[] | ((prev: DraftProduct[]) => DraftProduct[])) => {
+    setPages((prev) => prev.map((p, i) =>
+      i === currentPage ? { ...p, drafts: typeof updater === "function" ? updater(p.drafts) : updater } : p
+    ))
+  }
+  const setRejectedEmails = (updater: RejectedEmail[] | ((prev: RejectedEmail[]) => RejectedEmail[])) => {
+    setPages((prev) => prev.map((p, i) =>
+      i === currentPage ? { ...p, rejected: typeof updater === "function" ? updater(p.rejected) : updater } : p
+    ))
+  }
 
   const updateDraft = (index: number, field: keyof DraftProduct, value: string | boolean | string[]) => {
     setPages((prev) => prev.map((p, pi) =>
