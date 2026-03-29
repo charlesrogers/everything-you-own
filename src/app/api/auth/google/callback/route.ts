@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
 
   // Store token in sessionStorage then redirect — token never hits the server again
   const html = `<!DOCTYPE html><html><head><title>Redirecting...</title></head><body><script>
-    sessionStorage.setItem("gmail_token", ${JSON.stringify(tokenData.access_token)});
+    localStorage.setItem("gmail_token", ${JSON.stringify(tokenData.access_token)});
     window.location.replace("/import?auth=success");
   </script></body></html>`
 

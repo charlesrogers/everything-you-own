@@ -192,8 +192,15 @@ function ImportContent() {
   const searchParams = useSearchParams()
   const { householdId } = useAuth()
   const store = useStore()
-  const [phase, setPhase] = useState<Phase>("connect")
-  const [token, setToken] = useState("")
+  // Restore token from localStorage on mount — avoids re-auth
+  const [phase, setPhase] = useState<Phase>(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("gmail_token")) return "select"
+    return "connect"
+  })
+  const [token, setToken] = useState(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("gmail_token") || ""
+    return ""
+  })
   const [error, setError] = useState("")
 
   // Phase 2: Select
@@ -313,7 +320,7 @@ function ImportContent() {
     }
 
     if (authParam === "success") {
-      const savedToken = sessionStorage.getItem("gmail_token")
+      const savedToken = localStorage.getItem("gmail_token")
       if (savedToken) {
         setToken(savedToken)
         setPhase("select")
@@ -620,6 +627,25 @@ function ImportContent() {
   }
 
   // Current page's data
+  // Auto-save session whenever pages update (survives refresh)
+  useEffect(() => {
+    if (pages.length > 0 && pages.some((p) => p.status !== "processing")) {
+      try {
+        const session = {
+          pages: pages.map((p) => ({
+            ...p,
+            // Keep drafts for unsaved pages, clear for saved ones to save space
+            drafts: p.status === "saved" ? [] : p.drafts,
+          })),
+          currentPage,
+          totalSaved: pages.reduce((sum, p) => sum + p.savedCount, 0),
+          timestamp: Date.now(),
+        }
+        localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+      } catch {}
+    }
+  }, [pages, currentPage])
+
   const currentPageData = pages[currentPage]
   const drafts = currentPageData?.drafts ?? []
   const rejectedEmails = currentPageData?.rejected ?? []
@@ -710,16 +736,7 @@ function ImportContent() {
     const updatedPages = pages.map((p, i) => i === currentPage ? { ...p, status: "saved" as const, savedCount } : p)
     setPages(updatedPages)
 
-    // Save session to localStorage for resume
-    try {
-      const session = {
-        pages: updatedPages.map((p) => ({ ...p, drafts: p.status === "saved" ? [] : p.drafts })), // don't store saved drafts
-        currentPage,
-        totalSaved: totalSaved + savedCount,
-        timestamp: Date.now(),
-      }
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-    } catch {}
+    // Session auto-saved via useEffect on pages change
 
     // Auto-advance to next unsaved page
     const nextUnsaved = updatedPages.findIndex((p, i) => i > currentPage && p.status === "ready")
