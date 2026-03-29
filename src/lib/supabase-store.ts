@@ -775,11 +775,60 @@ export async function getImportedEmailIds(sb: Client, householdId: string): Prom
 
 export async function markEmailsImported(sb: Client, householdId: string, ids: string[]): Promise<void> {
   if (!householdId || ids.length === 0) return
-  const rows = ids.map((id) => ({ household_id: householdId, gmail_message_id: id }))
+  const rows = ids.map((id) => ({ household_id: householdId, gmail_message_id: id, status: 'imported' }))
   const { error } = await sb
     .from('imported_emails')
     .upsert(rows, { onConflict: 'household_id,gmail_message_id' })
   if (error) throw error
+}
+
+export interface EmailLogEntry {
+  gmail_message_id: string
+  email_subject: string
+  email_from: string
+  email_date: string
+  status: 'imported' | 'rejected' | 'skipped'
+  rejection_reason?: string
+  products_extracted?: number
+}
+
+export async function logProcessedEmails(sb: Client, householdId: string, entries: EmailLogEntry[]): Promise<void> {
+  if (!householdId || entries.length === 0) return
+  const rows = entries.map((e) => ({
+    household_id: householdId,
+    gmail_message_id: e.gmail_message_id,
+    email_subject: e.email_subject,
+    email_from: e.email_from,
+    email_date: e.email_date,
+    status: e.status,
+    rejection_reason: e.rejection_reason ?? null,
+    products_extracted: e.products_extracted ?? 0,
+  }))
+  const { error } = await sb
+    .from('imported_emails')
+    .upsert(rows, { onConflict: 'household_id,gmail_message_id' })
+  if (error) throw error
+}
+
+export async function getRejectedEmails(sb: Client, householdId: string): Promise<EmailLogEntry[]> {
+  if (!householdId) return []
+  const { data, error } = await sb
+    .from('imported_emails')
+    .select('gmail_message_id, email_subject, email_from, email_date, status, rejection_reason, products_extracted')
+    .eq('household_id', householdId)
+    .eq('status', 'rejected')
+    .order('imported_at', { ascending: false })
+    .limit(100)
+  if (error) throw error
+  return (data ?? []).map((r) => ({
+    gmail_message_id: r.gmail_message_id,
+    email_subject: r.email_subject ?? '',
+    email_from: r.email_from ?? '',
+    email_date: r.email_date ?? '',
+    status: r.status as 'rejected',
+    rejection_reason: r.rejection_reason ?? undefined,
+    products_extracted: r.products_extracted ?? 0,
+  }))
 }
 
 // --- Helpers ---

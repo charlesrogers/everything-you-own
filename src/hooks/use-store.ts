@@ -157,6 +157,8 @@ export function useStore() {
       ensureDefaultCategories: () => sbStore.ensureDefaultCategories(sb, hid),
       getImportedEmailIds: () => sbStore.getImportedEmailIds(sb, hid),
       markEmailsImported: (ids: string[]) => sbStore.markEmailsImported(sb, hid, ids),
+      logProcessedEmails: (entries: Parameters<typeof sbStore.logProcessedEmails>[2]) => sbStore.logProcessedEmails(sb, hid, entries),
+      getRejectedEmails: () => sbStore.getRejectedEmails(sb, hid),
 
       // --- WMS ---
       getLocations: () => wmsStore.getLocations(sb, hid),

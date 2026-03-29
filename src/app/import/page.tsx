@@ -462,6 +462,31 @@ function ImportContent() {
     }
 
     await store.markEmailsImported([...emailIds])
+
+    // Log all processed emails — imported and rejected
+    const logEntries = [
+      ...toSave.map((d) => ({
+        gmail_message_id: d.emailId,
+        email_subject: d.name,
+        email_from: d.retailer,
+        email_date: d.purchase_date,
+        status: "imported" as const,
+        products_extracted: 1,
+      })),
+      ...rejectedEmails.map((r) => ({
+        gmail_message_id: r.id,
+        email_subject: r.subject,
+        email_from: r.from,
+        email_date: r.date,
+        status: "rejected" as const,
+        rejection_reason: r.reason,
+        products_extracted: 0,
+      })),
+    ]
+    if (logEntries.length > 0 && store.logProcessedEmails) {
+      await store.logProcessedEmails(logEntries).catch(() => {})
+    }
+
     setSaved(true)
   }
 
