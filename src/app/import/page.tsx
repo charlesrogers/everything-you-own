@@ -93,7 +93,7 @@ function ImportContent() {
   const [locationOptions, setLocationOptions] = useState<ReturnType<typeof buildLocationOptions>>([])
   const [rejectedEmails, setRejectedEmails] = useState<RejectedEmail[]>([])
   const [reviewTab, setReviewTab] = useState<"products" | "rejected">("products")
-  const [hideImported, setHideImported] = useState(true)
+  const [emailFilter, setEmailFilter] = useState<"new" | "imported" | "all">("new")
   const [bulkLocationId, setBulkLocationId] = useState("")
 
   // Batch processing
@@ -159,10 +159,10 @@ function ImportContent() {
     }
   }, [searchParams])
 
-  // Auto-load emails when entering select phase with a token
+  // Auto-load ALL emails when entering select phase with a token
   useEffect(() => {
     if (phase === "select" && token && emails.length === 0 && householdId) {
-      loadEmails(token, timeframe)
+      loadAllEmails(token, timeframe)
     }
   }, [phase, token, householdId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -211,11 +211,54 @@ function ImportContent() {
     }
   }
 
+  // Auto-load ALL emails from the selected timeframe (paginate through everything)
+  const loadAllEmails = async (accessToken: string, tf: string) => {
+    setLoadingMore(true)
+    setEmails([])
+    setNextPageToken(undefined)
+
+    const imported = await store.getImportedEmailIds()
+    let pt: string | undefined = undefined
+    let allEntries: EmailEntry[] = []
+    let page = 0
+
+    try {
+      while (true) {
+        page++
+        const result = await searchReceipts(accessToken, tf, pt)
+        if (result.messages.length === 0) break
+
+        const metas = await batchGetMetadata(accessToken, result.messages.map((m) => m.id))
+        const entries: EmailEntry[] = metas.map((m) => ({
+          ...m,
+          selected: !imported.has(m.id),
+          alreadyImported: imported.has(m.id),
+        }))
+        allEntries = [...allEntries, ...entries]
+        setEmails(allEntries) // Update UI progressively
+        setProcessProgress({ current: allEntries.length, total: 0 }) // Show count
+
+        pt = result.nextPageToken
+        if (!pt) break
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message === "SESSION_EXPIRED") {
+        setError("Session expired. Please reconnect.")
+        setPhase("connect")
+        return
+      }
+      console.error("Error loading all emails:", e)
+    }
+
+    setNextPageToken(undefined) // All loaded
+    setLoadingMore(false)
+  }
+
   const handleTimeframeChange = (tf: string) => {
     setTimeframe(tf)
     setEmails([])
     setNextPageToken(undefined)
-    loadEmails(token, tf)
+    loadAllEmails(token, tf)
   }
 
   const toggleEmail = (id: string) => {
@@ -632,13 +675,16 @@ function ImportContent() {
                 onChange={(e) => handleTimeframeChange(e.target.value)}
                 className="rounded-lg border bg-card px-3 py-1.5 text-[13px] font-medium"
               >
+                <option value="1m">Last month</option>
                 <option value="3m">Last 3 months</option>
                 <option value="6m">Last 6 months</option>
                 <option value="1y">Last year</option>
                 <option value="2y">Last 2 years</option>
+                <option value="5y">Last 5 years</option>
+                <option value="all">All time</option>
               </select>
               <span className="text-[12px] text-muted-foreground">
-                {emails.length} email{emails.length !== 1 ? "s" : ""} found
+                {emails.length} email{emails.length !== 1 ? "s" : ""} loaded
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -673,26 +719,33 @@ function ImportContent() {
               {/* Import filter */}
               {(() => {
                 const importedCount = emails.filter((e) => e.alreadyImported).length
-                return importedCount > 0 ? (
+                const newCount = emails.length - importedCount
+                return (
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[12px] text-muted-foreground">
-                      {emails.length} emails &middot; {importedCount} already imported
+                      {emails.length} emails &middot; {newCount} new &middot; {importedCount} imported
+                      {loadingMore && " (loading...)"}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setHideImported(!hideImported)}
-                      className={`text-[11px] font-medium px-2 py-1 rounded-lg transition-colors ${
-                        hideImported ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground"
-                      }`}
-                    >
-                      {hideImported ? "Show imported" : "Hide imported"}
-                    </button>
+                    <div className="flex gap-1">
+                      {(["new", "imported", "all"] as const).map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          onClick={() => setEmailFilter(f)}
+                          className={`text-[11px] font-medium px-2 py-1 rounded-lg transition-colors ${
+                            emailFilter === f ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {f === "new" ? `New (${newCount})` : f === "imported" ? `Imported (${importedCount})` : `All (${emails.length})`}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                ) : null
+                )
               })()}
 
               <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden divide-y">
-                {emails.filter((e) => !hideImported || !e.alreadyImported).map((email) => (
+                {emails.filter((e) => emailFilter === "all" ? true : emailFilter === "new" ? !e.alreadyImported : e.alreadyImported).map((email) => (
                   <label
                     key={email.id}
                     className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-accent/50 transition-colors ${
@@ -724,20 +777,11 @@ function ImportContent() {
                 ))}
               </div>
 
-              {nextPageToken && (
-                <button
-                  onClick={() => loadEmails(token, timeframe, nextPageToken)}
-                  disabled={loadingMore}
-                  className="w-full rounded-lg border bg-card px-4 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                >
-                  {loadingMore ? (
-                    <span className="inline-flex items-center gap-2">
-                      <Loader2 className="size-3.5 animate-spin" /> Loading...
-                    </span>
-                  ) : (
-                    "Load more"
-                  )}
-                </button>
+              {loadingMore && (
+                <div className="flex items-center justify-center py-3 text-[12px] text-muted-foreground gap-2">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  Loading emails... ({emails.length} so far)
+                </div>
               )}
 
               <div className="flex items-center justify-between pt-2">

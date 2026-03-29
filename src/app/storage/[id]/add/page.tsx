@@ -77,6 +77,13 @@ export default function AddItemToLocationPage() {
       })
     : allProducts
 
+  const filteredUnsorted = searchQuery.trim()
+    ? unsorted.filter((p) => {
+        const q = searchQuery.toLowerCase()
+        return p.name.toLowerCase().includes(q) || (p.brand?.toLowerCase().includes(q) ?? false)
+      })
+    : unsorted
+
   const isShelf = location?.unit_subtype === "shelf"
 
   const handleAdd = async (productId: string) => {
@@ -202,6 +209,19 @@ export default function AddItemToLocationPage() {
         </div>
       )}
 
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search products..."
+          className="w-full rounded-lg border bg-background pl-10 pr-3 py-2 text-[13px]"
+          autoFocus
+        />
+      </div>
+
       {/* Tabs */}
       <div className="flex gap-1 border-b">
         <button
@@ -210,7 +230,7 @@ export default function AddItemToLocationPage() {
             tab === "unsorted" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          Unsorted ({unsorted.length})
+          Unsorted ({filteredUnsorted.length})
         </button>
         <button
           onClick={() => setTab("all")}
@@ -218,28 +238,13 @@ export default function AddItemToLocationPage() {
             tab === "all" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          All Products ({allProducts.length})
+          All Products ({filtered.length})
         </button>
       </div>
 
-      {/* Search input — shown for All Products tab */}
-      {tab === "all" && (
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter products..."
-            className="w-full rounded-lg border bg-background pl-10 pr-3 py-2 text-[13px]"
-            autoFocus
-          />
-        </div>
-      )}
-
       {/* Product list */}
       <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden divide-y">
-        {tab === "unsorted" && unsorted.length === 0 && (
+        {tab === "unsorted" && filteredUnsorted.length === 0 && (
           <div className="p-8 text-center text-[13px] text-muted-foreground">
             All products have been assigned to locations.
             <button
@@ -255,7 +260,7 @@ export default function AddItemToLocationPage() {
             {searchQuery.trim() ? "No products match your search." : "No products in your database yet."}
           </div>
         )}
-        {(tab === "unsorted" ? unsorted : filtered).map((item) => {
+        {(tab === "unsorted" ? filteredUnsorted : filtered).map((item) => {
           const alreadyHere = existingItemIds.has(item.id)
           const wasJustAdded = justAdded.has(item.id)
 

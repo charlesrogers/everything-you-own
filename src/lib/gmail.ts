@@ -45,10 +45,13 @@ export interface GmailSearchResult {
 }
 
 const TIMEFRAME_QUERIES: Record<string, string> = {
+  "1m": "newer_than:1m",
   "3m": "newer_than:3m",
   "6m": "newer_than:6m",
   "1y": "newer_than:1y",
   "2y": "newer_than:2y",
+  "5y": "newer_than:5y",
+  "all": "",
 }
 
 export async function searchReceipts(
