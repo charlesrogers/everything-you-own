@@ -216,6 +216,7 @@ function ImportContent() {
   const [reviewTab, setReviewTab] = useState<"products" | "rejected">("products")
   const [emailFilter, setEmailFilter] = useState<"new" | "imported" | "all">("new")
   const [bulkLocationId, setBulkLocationId] = useState("")
+  const SESSION_KEY = "eyo_import_session"
 
   // Pipeline batch processing with pages
   const BATCH_SIZE = 20
@@ -663,14 +664,27 @@ function ImportContent() {
     }
 
     // Mark page as saved and advance
-    setPages((prev) => prev.map((p, i) => i === currentPage ? { ...p, status: "saved", savedCount } : p))
+    const updatedPages = pages.map((p, i) => i === currentPage ? { ...p, status: "saved" as const, savedCount } : p)
+    setPages(updatedPages)
+
+    // Save session to localStorage for resume
+    try {
+      const session = {
+        pages: updatedPages.map((p) => ({ ...p, drafts: p.status === "saved" ? [] : p.drafts })), // don't store saved drafts
+        currentPage,
+        totalSaved: totalSaved + savedCount,
+        timestamp: Date.now(),
+      }
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+    } catch {}
 
     // Auto-advance to next unsaved page
-    const nextUnsaved = pages.findIndex((p, i) => i > currentPage && p.status === "ready")
+    const nextUnsaved = updatedPages.findIndex((p, i) => i > currentPage && p.status === "ready")
     if (nextUnsaved !== -1) {
       setCurrentPage(nextUnsaved)
-    } else if (pages.every((p) => p.status === "saved" || p.status === "processing")) {
+    } else if (updatedPages.every((p) => p.status === "saved" || p.status === "processing")) {
       setSaved(true)
+      localStorage.removeItem(SESSION_KEY) // cleanup when done
     }
   }
 
@@ -812,6 +826,44 @@ function ImportContent() {
         </div>
       )}
 
+      {/* Resume session banner */}
+      {phase !== "review" && (() => {
+        try {
+          const raw = localStorage.getItem(SESSION_KEY)
+          if (!raw) return null
+          const session = JSON.parse(raw)
+          const savedPages = (session.pages as BatchPage[]).filter((p) => p.status === "saved").length
+          const totalPages = (session.pages as BatchPage[]).length
+          const age = Date.now() - session.timestamp
+          if (age > 24 * 60 * 60 * 1000) { localStorage.removeItem(SESSION_KEY); return null } // expire after 24h
+          return (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-center justify-between">
+              <span className="text-[13px] text-amber-700">
+                You have an unfinished import — {savedPages} of {totalPages} pages saved ({session.totalSaved} products)
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setPages(session.pages)
+                    setCurrentPage(session.pages.findIndex((p: BatchPage) => p.status === "ready") ?? 0)
+                    setPhase("review")
+                  }}
+                  className="rounded-lg bg-amber-600 px-3 py-1 text-[12px] font-medium text-white hover:bg-amber-700"
+                >
+                  Resume
+                </button>
+                <button
+                  onClick={() => localStorage.removeItem(SESSION_KEY)}
+                  className="rounded-lg border px-3 py-1 text-[12px] font-medium hover:bg-accent"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          )
+        } catch { return null }
+      })()}
+
       {/* Phase 1: Connect */}
       {phase === "connect" && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -917,6 +969,13 @@ function ImportContent() {
                 className="text-[12px] text-primary hover:underline"
               >
                 None
+              </button>
+              <button
+                onClick={handleProcess}
+                disabled={selectedCount === 0}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 ml-2"
+              >
+                Process {selectedCount}
               </button>
             </div>
           </div>
@@ -1364,24 +1423,40 @@ function ImportContent() {
 
               {/* Page save controls */}
               {currentPageData?.status === "ready" && (
-              <div className="rounded-lg border bg-secondary/30 p-3 space-y-2">
-                {totalSaved > 0 && (
-                  <div className="text-[12px] text-muted-foreground">
-                    {totalSaved} products saved across {pages.filter((p) => p.status === "saved").length} pages
-                  </div>
-                )}
+              <div className="sticky bottom-0 z-10 rounded-lg border bg-card shadow-lg p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[12px] text-muted-foreground">
-                    Page {currentPage + 1}: {includedCount} of {drafts.length} will be saved
-                  </span>
-                  <button
-                    onClick={handleSave}
-                    disabled={includedCount === 0}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
-                  >
-                    <Check className="size-3.5" />
-                    Save Page {currentPage + 1} ({includedCount})
-                  </button>
+                  <div>
+                    <span className="text-[12px] text-muted-foreground">
+                      Page {currentPage + 1} of {pages.length}: {includedCount} of {drafts.length} products
+                    </span>
+                    {totalSaved > 0 && (
+                      <span className="text-[11px] text-muted-foreground ml-2">({totalSaved} saved total)</span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {/* Save & Next = primary CTA when more pages exist */}
+                    {pages.some((p, i) => i > currentPage && (p.status === "ready" || p.status === "processing")) ? (
+                      <>
+                        <button
+                          onClick={handleSave}
+                          disabled={includedCount === 0}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
+                        >
+                          <Check className="size-3.5" />
+                          Save & Next Page →
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={handleSave}
+                        disabled={includedCount === 0}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
+                      >
+                        <Check className="size-3.5" />
+                        Save ({includedCount})
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
               )}
