@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Package, AlertTriangle, ShoppingBag, Clock } from "lucide-react"
+import { Package, AlertTriangle, ShoppingBag, Clock, MapPinOff, ArrowUpDown, User } from "lucide-react"
 import type { ReturnAlert, CategorySpending } from "@/lib/store"
 import type { Product, Category, Subcategory } from "@/lib/types"
 import { ReturnAlertCard } from "@/components/return-alert"
@@ -11,25 +11,35 @@ import { StatusBadge } from "@/components/status-badge"
 import { useStore } from "@/hooks/use-store"
 import { LoadingSkeleton } from "@/components/loading-skeleton"
 
+type SortOrder = "newest" | "oldest"
+type LocationFilter = "all" | "unplaced"
+
 export default function DashboardPage() {
   const store = useStore()
   const [returnAlerts, setReturnAlerts] = useState<ReturnAlert[]>([])
   const [warrantyAlerts, setWarrantyAlerts] = useState<ReturnAlert[]>([])
   const [spending, setSpending] = useState<CategorySpending[]>([])
   const [recent, setRecent] = useState<Product[]>([])
+  const [allProducts, setAllProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
   const [loading, setLoading] = useState(true)
 
+  // Filters
+  const [sortOrder, setSortOrder] = useState<SortOrder>("newest")
+  const [locationFilter, setLocationFilter] = useState<LocationFilter>("all")
+  const [placedProductIds, setPlacedProductIds] = useState<Set<string>>(new Set())
+
   useEffect(() => {
     async function load() {
-      const [ra, wa, sp, rec, cats, subs] = await Promise.all([
+      const [ra, wa, sp, rec, cats, subs, prods] = await Promise.all([
         store.getReturnAlerts(),
         store.getWarrantyAlerts(),
         store.getSpendingByCategory(),
-        store.getRecentProducts(10),
+        store.getRecentProducts(50),
         store.getCategories(),
         store.getSubcategories(),
+        store.getProducts(),
       ])
       setReturnAlerts(ra)
       setWarrantyAlerts(wa)
@@ -37,6 +47,20 @@ export default function DashboardPage() {
       setRecent(rec)
       setCategories(cats)
       setSubcategories(subs)
+      setAllProducts(prods)
+
+      // Get placed product IDs from storage API
+      try {
+        const res = await fetch("/api/storage")
+        const data = await res.json()
+        // itemCounts keys are location IDs, but we need product IDs
+        // Fetch product_locations to get the set of placed product IDs
+        const unsorted = await store.getUnsortedProducts()
+        const unsortedIds = new Set(unsorted.map((u) => u.id))
+        const placed = new Set(prods.filter((p: Product) => !unsortedIds.has(p.id)).map((p: Product) => p.id))
+        setPlacedProductIds(placed)
+      } catch {}
+
       setLoading(false)
     }
     load()
@@ -49,6 +73,17 @@ export default function DashboardPage() {
   const totalSpend = spending.reduce((sum, s) => sum + s.totalSpend, 0)
   const totalItems = spending.reduce((sum, s) => sum + s.itemCount, 0)
   const hasAlerts = returnAlerts.length > 0 || warrantyAlerts.length > 0
+
+  // Filter and sort products
+  let displayProducts = [...recent]
+  if (locationFilter === "unplaced") {
+    displayProducts = displayProducts.filter((p) => !placedProductIds.has(p.id))
+  }
+  if (sortOrder === "oldest") {
+    displayProducts.reverse()
+  }
+
+  const unplacedCount = allProducts.filter((p) => !placedProductIds.has(p.id)).length
 
   return (
     <div className="space-y-8">
@@ -115,17 +150,46 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* Recent Activity */}
+      {/* Recent Activity with filters */}
       {recent.length > 0 && (
         <section className="space-y-3">
-          <h2 className="flex items-center gap-2 text-[15px] font-semibold">
-            <Clock className="size-4" />
-            Recently Added
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+              <Clock className="size-4" />
+              Products
+            </h2>
+            <div className="flex items-center gap-2">
+              {/* Location filter */}
+              <button
+                onClick={() => setLocationFilter(locationFilter === "all" ? "unplaced" : "all")}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                  locationFilter === "unplaced"
+                    ? "bg-amber-500/10 text-amber-600 border border-amber-500/30"
+                    : "bg-secondary text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <MapPinOff className="size-3" />
+                {locationFilter === "unplaced" ? `Unplaced (${unplacedCount})` : "Unplaced"}
+              </button>
+              {/* Sort */}
+              <button
+                onClick={() => setSortOrder(sortOrder === "newest" ? "oldest" : "newest")}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowUpDown className="size-3" />
+                {sortOrder === "newest" ? "Newest" : "Oldest"}
+              </button>
+            </div>
+          </div>
           <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden divide-y">
-            {recent.map((product) => {
+            {displayProducts.length === 0 ? (
+              <div className="p-8 text-center text-[13px] text-muted-foreground">
+                {locationFilter === "unplaced" ? "All products have been placed in storage!" : "No products yet."}
+              </div>
+            ) : displayProducts.map((product) => {
               const cat = catMap.get(product.category_id)
               const sub = subMap.get(product.subcategory_id)
+              const isPlaced = placedProductIds.has(product.id)
               return (
                 <Link
                   key={product.id}
@@ -145,7 +209,18 @@ export default function DashboardPage() {
                       {cat?.name}{sub ? ` · ${sub.name}` : ""}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
+                    {product.ownership && product.ownership !== "mine" && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
+                        <User className="size-2.5" />
+                        {product.ownership}
+                      </span>
+                    )}
+                    {!isPlaced && (
+                      <span className="text-[10px] text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                        unplaced
+                      </span>
+                    )}
                     {product.price != null && (
                       <span className="text-[13px] font-semibold">${product.price.toFixed(2)}</span>
                     )}

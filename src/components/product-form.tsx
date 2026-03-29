@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog"
 import { ImageUpload } from "./image-upload"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Product, ProductStatus, ProductCondition, ProductOwnership, Category, Subcategory } from "@/lib/types"
+import { Product, ProductStatus, ProductCondition, ProductOwnership, Category, Subcategory, Location } from "@/lib/types"
 import { STATUS_OPTIONS, CONDITION_OPTIONS, OWNERSHIP_OPTIONS, EXPENSE_TAGS } from "@/lib/constants"
 import type { DuplicateResult } from "@/lib/store"
 import { useStore } from "@/hooks/use-store"
@@ -84,6 +84,39 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
   const [isConsumable, setIsConsumable] = useState(product?.is_consumable || false)
   const [notes, setNotes] = useState(product?.notes || "")
   const [tagsInput, setTagsInput] = useState((product?.tags || []).join(", "))
+
+  // Location picker state (for new products)
+  const [allLocations, setAllLocations] = useState<Location[]>([])
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(assignToLocationId ?? null)
+  const [showLocationPicker, setShowLocationPicker] = useState(!!assignToLocationId)
+  const LAST_BIN_KEY = "eyo_last_bin_id"
+
+  useEffect(() => {
+    // Load locations for picker
+    if (mode === "create") {
+      fetch("/api/storage").then((r) => r.json()).then((data) => {
+        setAllLocations(data.locations ?? [])
+      }).catch(() => {})
+    }
+  }, [mode])
+
+  // Helper: get path for a location
+  function getLocationPath(locId: string): string {
+    const locMap = new Map(allLocations.map((l) => [l.id, l]))
+    const parts: string[] = []
+    let cur = locMap.get(locId)
+    while (cur) {
+      parts.unshift(cur.name)
+      cur = cur.parent_id ? locMap.get(cur.parent_id) : undefined
+    }
+    return parts.join(" › ")
+  }
+
+  // Location groups for cascading picker
+  const rooms = allLocations.filter((l) => l.location_type === "room")
+  const bins = allLocations.filter((l) => l.unit_subtype === "bin")
+  const lastBinId = typeof window !== "undefined" ? localStorage.getItem(LAST_BIN_KEY) : null
+  const lastBin = lastBinId ? allLocations.find((l) => l.id === lastBinId) : null
 
   useEffect(() => {
     async function load() {
@@ -203,15 +236,18 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
     try {
       if (mode === "create") {
         const newProduct = await store.addProduct(data)
-        if (assignToLocationId) {
+        const targetLocation = selectedLocationId || assignToLocationId
+        if (targetLocation) {
           const qty = parseInt(quantity) || 1
-          await store.addProductToLocation({ product_id: newProduct.id, location_id: assignToLocationId, quantity: qty })
+          await store.addProductToLocation({ product_id: newProduct.id, location_id: targetLocation, quantity: qty })
+          // Remember last bin for "same bin" button
+          localStorage.setItem(LAST_BIN_KEY, targetLocation)
           if (addAnotherRef.current) {
             resetForm()
             addAnotherRef.current = false
             return
           }
-          window.location.href = `/storage/${assignToLocationId}`
+          window.location.href = `/storage/${targetLocation}`
         } else {
           window.location.href = `/products/${newProduct.id}`
         }
@@ -634,6 +670,51 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
             </div>
           )}
         </div>
+
+        {/* Location picker — only for new products */}
+        {mode === "create" && allLocations.length > 0 && (
+          <div className="rounded-lg border bg-secondary/30 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-[13px] font-medium">Storage Location</label>
+              {!showLocationPicker && (
+                <button type="button" onClick={() => setShowLocationPicker(true)} className="text-[12px] text-primary font-medium">
+                  Assign to bin
+                </button>
+              )}
+            </div>
+            {showLocationPicker && (
+              <div className="space-y-2">
+                {/* Last bin shortcut */}
+                {lastBin && selectedLocationId !== lastBin.id && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLocationId(lastBin.id)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border bg-card text-left hover:bg-accent transition-colors"
+                  >
+                    <span className="text-[12px] text-primary font-medium">Same as last →</span>
+                    <span className="text-[12px] text-muted-foreground truncate">{getLocationPath(lastBin.id)}</span>
+                  </button>
+                )}
+                {/* Bin dropdown */}
+                <select
+                  value={selectedLocationId ?? ""}
+                  onChange={(e) => setSelectedLocationId(e.target.value || null)}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-[13px]"
+                >
+                  <option value="">No location (unsorted)</option>
+                  {bins.map((bin) => (
+                    <option key={bin.id} value={bin.id}>{getLocationPath(bin.id)}</option>
+                  ))}
+                </select>
+                {selectedLocationId && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Will be placed in: {getLocationPath(selectedLocationId)}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-3 pt-4 border-t">
           <Button type="submit" className="flex-1 sm:flex-none" disabled={saving}>
