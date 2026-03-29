@@ -109,32 +109,27 @@ export default function AddItemToLocationPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Breadcrumbs */}
-      <div className="flex items-center gap-1 text-[12px] text-muted-foreground">
-        <Link href="/storage" className="hover:text-foreground transition-colors">
-          Storage
-        </Link>
-        {breadcrumbs.map((crumb) => (
-          <span key={crumb.id} className="flex items-center gap-1">
-            <ChevronRight className="size-3" />
-            <Link href={`/storage/${crumb.id}`} className="hover:text-foreground transition-colors">
-              {crumb.name}
-            </Link>
-          </span>
-        ))}
-        <ChevronRight className="size-3" />
-        <span className="text-foreground font-medium">Add Item</span>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <h1 className="text-[20px] font-bold">Add Item to {location.name}</h1>
-        <Link
-          href={`/products/new?location=${locationId}`}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="size-3.5" />
-          New Product
-        </Link>
+      {/* Sticky header with location name */}
+      <div className="sticky top-12 z-40 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-background/95 backdrop-blur-sm border-b">
+        <div className="flex items-center gap-1 text-[11px] text-muted-foreground mb-1">
+          <Link href="/storage" className="hover:text-foreground transition-colors">Storage</Link>
+          {breadcrumbs.map((crumb) => (
+            <span key={crumb.id} className="flex items-center gap-1">
+              <ChevronRight className="size-2.5" />
+              <Link href={`/storage/${crumb.id}`} className="hover:text-foreground transition-colors">{crumb.name}</Link>
+            </span>
+          ))}
+        </div>
+        <div className="flex items-center justify-between">
+          <h1 className="text-[16px] font-bold">Add Item to <span className="text-primary">{location.name}</span></h1>
+          <Link
+            href={`/products/new?location=${locationId}`}
+            className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="size-3" />
+            New Product
+          </Link>
+        </div>
       </div>
 
       {/* Position picker — only for shelves */}

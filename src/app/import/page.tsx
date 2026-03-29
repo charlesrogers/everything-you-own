@@ -82,6 +82,8 @@ function ImportContent() {
   const [emails, setEmails] = useState<EmailEntry[]>([])
   const [nextPageToken, setNextPageToken] = useState<string | undefined>()
   const [timeframe, setTimeframe] = useState("1y")
+  const [customAfter, setCustomAfter] = useState("")
+  const [customBefore, setCustomBefore] = useState("")
   const [loadingMore, setLoadingMore] = useState(false)
 
   // Phase 3: Review
@@ -671,8 +673,16 @@ function ImportContent() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <select
-                value={timeframe}
-                onChange={(e) => handleTimeframeChange(e.target.value)}
+                value={timeframe.includes("_") ? "custom" : timeframe}
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (v === "custom") {
+                    // Don't load yet — wait for date inputs
+                    setTimeframe("custom")
+                  } else {
+                    handleTimeframeChange(v)
+                  }
+                }}
                 className="rounded-lg border bg-card px-3 py-1.5 text-[13px] font-medium"
               >
                 <option value="1m">Last month</option>
@@ -682,7 +692,37 @@ function ImportContent() {
                 <option value="2y">Last 2 years</option>
                 <option value="5y">Last 5 years</option>
                 <option value="all">All time</option>
+                <option value="custom">Custom range</option>
               </select>
+              {(timeframe === "custom" || timeframe.includes("_")) && (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={customAfter}
+                    onChange={(e) => setCustomAfter(e.target.value)}
+                    className="rounded-lg border bg-card px-2 py-1 text-[12px]"
+                  />
+                  <span className="text-[11px] text-muted-foreground">to</span>
+                  <input
+                    type="date"
+                    value={customBefore}
+                    onChange={(e) => setCustomBefore(e.target.value)}
+                    className="rounded-lg border bg-card px-2 py-1 text-[12px]"
+                  />
+                  <button
+                    onClick={() => {
+                      if (customAfter && customBefore) {
+                        const tf = `${customAfter}_${customBefore}`
+                        handleTimeframeChange(tf)
+                      }
+                    }}
+                    disabled={!customAfter || !customBefore}
+                    className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-50"
+                  >
+                    Go
+                  </button>
+                </div>
+              )}
               <span className="text-[12px] text-muted-foreground">
                 {emails.length} email{emails.length !== 1 ? "s" : ""} loaded
               </span>
@@ -893,7 +933,7 @@ function ImportContent() {
               </div>
 
               {/* Products tab */}
-              {reviewTab === "products" && (<>
+              {reviewTab === "products" && (<div>
 
               {/* Bulk location assignment */}
               {locationOptions.length > 0 && (
@@ -925,6 +965,7 @@ function ImportContent() {
                       </button>
                     ) : null
                   })()}
+                </div>
                 </div>
               )}
 
@@ -1144,7 +1185,9 @@ function ImportContent() {
                 </div>
               </div>
 
-              </>)} {/* end products tab */}
+              </div>
+              )}
+              {/* end products tab */}
 
               {/* Rejected tab */}
               {reviewTab === "rejected" && (
@@ -1172,7 +1215,7 @@ function ImportContent() {
                           type="button"
                           onClick={() => {
                             // Re-parse: force parse the email body and add any products found
-                            const parsed = parseReceiptEmail(rej.bodyText, rej.subject, rej.from)
+                            const parsed = parseReceiptEmail(rej.bodyText, rej.subject, rej.from, rej.date)
                             if (parsed.products.length > 0) {
                               const newDrafts: DraftProduct[] = parsed.products.map((p) => ({
                                 emailId: rej.id,

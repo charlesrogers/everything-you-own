@@ -59,7 +59,13 @@ export async function searchReceipts(
   timeframe: string = "1y",
   pageToken?: string
 ): Promise<GmailSearchResult> {
-  const q = `subject:(order OR receipt OR invoice OR confirmation OR purchase) -subject:(shipped OR "out for delivery" OR delivered OR "has arrived" OR "track your" OR "how was" OR "rate your" OR "review your" OR "ready for pickup" OR "picked up" OR "items from your list" OR "add to cart" OR newsletter OR unsubscribe) ${TIMEFRAME_QUERIES[timeframe] || "newer_than:1y"}`
+  // Support custom date ranges like "2025-01-01_2025-06-30"
+  let timeQuery = TIMEFRAME_QUERIES[timeframe] || "newer_than:1y"
+  if (timeframe.includes("_")) {
+    const [after, before] = timeframe.split("_")
+    timeQuery = `after:${after.replace(/-/g, "/")} before:${before.replace(/-/g, "/")}`
+  }
+  const q = `subject:(order OR receipt OR invoice OR confirmation OR purchase) -subject:(shipped OR "out for delivery" OR delivered OR "has arrived" OR "track your" OR "how was" OR "rate your" OR "review your" OR "ready for pickup" OR "picked up" OR "items from your list" OR "add to cart" OR newsletter OR unsubscribe) ${timeQuery}`
   const params = new URLSearchParams({ q, maxResults: "20" })
   if (pageToken) params.set("pageToken", pageToken)
 

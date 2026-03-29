@@ -56,6 +56,7 @@ export const UNIT_SUBTYPE_CONFIG: Record<UnitSubtype, {
 // --- SAMLA Bin Dimensions ---
 
 export const SAMLA_BINS = [
+  // IKEA SAMLA
   { id: 'samla_1gal',  name: 'SAMLA 1 gal',  widthIn: 11,    depthIn: 7.5,   heightIn: 5.5,  volumeGal: 1 },
   { id: 'samla_3gal',  name: 'SAMLA 3 gal',  widthIn: 11,    depthIn: 15.25, heightIn: 5.5,  volumeGal: 3 },
   { id: 'samla_6gal',  name: 'SAMLA 6 gal',  widthIn: 11,    depthIn: 15.25, heightIn: 11,   volumeGal: 6 },
@@ -63,6 +64,19 @@ export const SAMLA_BINS = [
   { id: 'samla_15gal', name: 'SAMLA 15 gal', widthIn: 30.75, depthIn: 22,    heightIn: 7,    volumeGal: 15 },
   { id: 'samla_17gal', name: 'SAMLA 17 gal', widthIn: 22.5,  depthIn: 15.25, heightIn: 16.5, volumeGal: 17 },
   { id: 'samla_34gal', name: 'SAMLA 34 gal', widthIn: 30.75, depthIn: 22,    heightIn: 17,   volumeGal: 34 },
+  // Ammo cans
+  { id: 'ammo_30cal',  name: '.30 Cal Ammo Can',  widthIn: 3.5,  depthIn: 10.9,  heightIn: 7.3,  volumeGal: 1.2 },
+  { id: 'ammo_50cal',  name: '.50 Cal Ammo Can',  widthIn: 5.5,  depthIn: 11.5,  heightIn: 8.5,  volumeGal: 2.3 },
+  { id: 'ammo_fat50',  name: 'Fat .50 Cal Can',   widthIn: 7.5,  depthIn: 11.5,  heightIn: 8.5,  volumeGal: 3.2 },
+  { id: 'ammo_20mm',   name: '20mm Ammo Can',     widthIn: 7.5,  depthIn: 14.5,  heightIn: 10,   volumeGal: 4.7 },
+  // Plano / Tackle
+  { id: 'plano_3600',  name: 'Plano 3600',  widthIn: 9,    depthIn: 14,   heightIn: 2,    volumeGal: 1.1 },
+  { id: 'plano_3700',  name: 'Plano 3700',  widthIn: 11,   depthIn: 14,   heightIn: 2,    volumeGal: 1.3 },
+  // Sterilite
+  { id: 'sterilite_6qt',  name: 'Sterilite 6 qt',   widthIn: 8.25,  depthIn: 13.6,  heightIn: 4.9,  volumeGal: 1.5 },
+  { id: 'sterilite_16qt', name: 'Sterilite 16 qt',  widthIn: 11.9,  depthIn: 16.8,  heightIn: 6.1,  volumeGal: 4 },
+  { id: 'sterilite_28qt', name: 'Sterilite 28 qt',  widthIn: 13.5,  depthIn: 16.3,  heightIn: 6.5,  volumeGal: 7 },
+  { id: 'sterilite_66qt', name: 'Sterilite 66 qt',  widthIn: 17.1,  depthIn: 23.6,  heightIn: 6.6,  volumeGal: 16.5 },
 ] as const
 
 // --- OMAR Rack Specs ---
