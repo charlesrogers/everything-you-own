@@ -81,6 +81,7 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
   const [warrantyExpires, setWarrantyExpires] = useState(product?.warranty_expires || "")
   const [orderId, setOrderId] = useState(product?.order_id || "")
   const [ownership, setOwnership] = useState<ProductOwnership>(product?.ownership || "mine")
+  const [visibility, setVisibility] = useState<'shared' | 'private'>(product?.visibility || "shared")
   const [isConsumable, setIsConsumable] = useState(product?.is_consumable || false)
   const [notes, setNotes] = useState(product?.notes || "")
   const [tagsInput, setTagsInput] = useState((product?.tags || []).join(", "))
@@ -228,6 +229,7 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
       warranty_expires: warrantyExpires || undefined,
       order_id: orderId || undefined,
       ownership,
+      visibility,
       is_consumable: isConsumable || undefined,
       notes: notes || undefined,
       tags,
@@ -604,6 +606,32 @@ export function ProductForm({ product, mode, assignToLocationId }: ProductFormPr
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[13px]">Visibility</Label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setVisibility("shared")}
+                      className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                        visibility === "shared" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                      }`}
+                    >
+                      Shared
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisibility("private")}
+                      className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${
+                        visibility === "private" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
+                      }`}
+                    >
+                      Private
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {visibility === "private" ? "Only you can see this item" : "Visible to all household members"}
+                  </p>
                 </div>
               </div>
 

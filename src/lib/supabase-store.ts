@@ -774,7 +774,7 @@ export async function getImportedEmailIds(sb: Client, householdId: string): Prom
 }
 
 export async function markEmailsImported(sb: Client, householdId: string, ids: string[]): Promise<void> {
-  if (ids.length === 0) return
+  if (!householdId || ids.length === 0) return
   const rows = ids.map((id) => ({ household_id: householdId, gmail_message_id: id }))
   const { error } = await sb
     .from('imported_emails')
@@ -820,6 +820,8 @@ function mapProduct(row: Record<string, unknown>): Product {
     warranty_expires: (row.warranty_expires as string) || undefined,
     order_id: (row.order_id as string) || undefined,
     ownership: (row.ownership as Product['ownership']) || undefined,
+    visibility: (row.visibility as 'shared' | 'private') || 'shared',
+    added_by: (row.added_by as string) || undefined,
     is_consumable: (row.is_consumable as boolean) || false,
     tags: (row.tags as string[]) || [],
     created_at: row.created_at as string,

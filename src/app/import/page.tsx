@@ -374,6 +374,7 @@ function ImportContent() {
         ownership: draft.ownership,
         is_consumable: draft.is_consumable || undefined,
         source_url: draft.source_url || undefined,
+        visibility: "shared",
         status: "purchased",
         currency: "USD",
         tags: draft.tags,

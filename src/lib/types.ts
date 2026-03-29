@@ -46,6 +46,8 @@ export interface Product {
   warranty_expires?: string
   order_id?: string
   ownership?: ProductOwnership
+  visibility: 'shared' | 'private'
+  added_by?: string
   is_consumable?: boolean
   tags: string[]
   created_at: string

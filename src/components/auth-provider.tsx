@@ -7,6 +7,7 @@ import { USE_SUPABASE } from '@/lib/feature-flags'
 
 interface AuthContextValue {
   user: User | null
+  userId: string | null
   householdId: string | null
   isLoading: boolean
   signOut: () => Promise<void>
@@ -14,6 +15,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
+  userId: null,
   householdId: null,
   isLoading: true,
   signOut: async () => {},
@@ -86,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, householdId, isLoading, signOut }}>
+    <AuthContext.Provider value={{ user, userId: user?.id ?? null, householdId, isLoading, signOut }}>
       {children}
     </AuthContext.Provider>
   )

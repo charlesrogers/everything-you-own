@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Package } from "lucide-react"
+import { Package, Lock } from "lucide-react"
 import { Product, Category, Subcategory } from "@/lib/types"
 import { StatusBadge } from "./status-badge"
 import { TableCell, TableRow } from "./ui/table"
@@ -25,7 +25,10 @@ export function ProductRow({ product, category, subcategory }: ProductRowProps) 
             )}
           </div>
           <div className="min-w-0">
-            <p className="text-[13px] font-medium truncate">{product.name}</p>
+            <p className="text-[13px] font-medium truncate flex items-center gap-1">
+              {product.name}
+              {product.visibility === "private" && <Lock className="size-3 text-muted-foreground/50 shrink-0" />}
+            </p>
             {product.brand && (
               <p className="text-[11px] text-muted-foreground">{product.brand}</p>
             )}

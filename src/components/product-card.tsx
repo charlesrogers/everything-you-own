@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Package, Clock } from "lucide-react"
+import { Package, Clock, Lock } from "lucide-react"
 import { Product, Category, Subcategory } from "@/lib/types"
 import { StatusBadge } from "./status-badge"
 
@@ -45,7 +45,10 @@ export function ProductCard({ product, category, subcategory }: ProductCardProps
       </div>
       <div className="p-3 flex flex-col gap-1.5">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="text-[13px] font-medium leading-snug line-clamp-2">{product.name}</h3>
+          <h3 className="text-[13px] font-medium leading-snug line-clamp-2 flex items-center gap-1">
+            {product.name}
+            {product.visibility === "private" && <Lock className="size-3 text-muted-foreground/50 shrink-0" />}
+          </h3>
           <StatusBadge status={product.status} />
         </div>
         {product.brand && (
