@@ -562,14 +562,23 @@ function ImportContent() {
       }
     }
 
+    // Dedup: remove products with same name+price+order_id within this batch
+    const seen = new Set<string>()
+    const dedupedDrafts = batchDrafts.filter((d) => {
+      const key = `${d.name.toLowerCase()}|${d.price}|${d.order_id}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
     // Emails with 0 products → rejected
-    const draftEmailIds = new Set(batchDrafts.map((d) => d.emailId))
+    const draftEmailIds = new Set(dedupedDrafts.map((d) => d.emailId))
     for (const eb of emailBodies) {
       if (!draftEmailIds.has(eb.id)) {
         rejected.push({ id: eb.id, subject: eb.subject, from: eb.from, date: eb.date, reason: "0 products extracted", bodyText: eb.bodyText })
       }
     }
-    return { drafts: batchDrafts, rejected }
+    return { drafts: dedupedDrafts, rejected }
   }
 
   // Current page's data
@@ -599,8 +608,21 @@ function ImportContent() {
   const handleSave = async () => {
     const toSave = drafts.filter((d) => d.included)
     const emailIds = new Set<string>()
+    let savedCount = 0
 
     for (const draft of toSave) {
+      // Skip exact duplicates: same name + brand + order_id already exists
+      const dupes = await store.checkDuplicates({
+        name: draft.name,
+        brand: draft.brand || undefined,
+        sku: draft.order_id || undefined,
+      })
+      if (dupes.exact.length > 0) {
+        console.log(`Skipping duplicate: ${draft.name} (order ${draft.order_id})`)
+        emailIds.add(draft.emailId) // Still mark email as imported
+        continue
+      }
+
       const newProduct = await store.addProduct({
         name: draft.name, brand: draft.brand || undefined,
         category_id: draft.category_id, subcategory_id: draft.subcategory_id,
@@ -615,6 +637,7 @@ function ImportContent() {
         localStorage.setItem("eyo_last_bin_id", draft.location_id)
       }
       emailIds.add(draft.emailId)
+      savedCount++
     }
 
     await store.markEmailsImported([...emailIds])
@@ -628,7 +651,7 @@ function ImportContent() {
     }
 
     // Mark page as saved and advance
-    setPages((prev) => prev.map((p, i) => i === currentPage ? { ...p, status: "saved", savedCount: toSave.length } : p))
+    setPages((prev) => prev.map((p, i) => i === currentPage ? { ...p, status: "saved", savedCount } : p))
 
     // Auto-advance to next unsaved page
     const nextUnsaved = pages.findIndex((p, i) => i > currentPage && p.status === "ready")
