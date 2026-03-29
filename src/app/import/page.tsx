@@ -927,6 +927,41 @@ function ImportContent() {
             </div>
           ) : (
             <>
+              {/* Vendor quick-actions */}
+              {(() => {
+                const vendors = new Map<string, number>()
+                for (const d of drafts) {
+                  const v = d.retailer || "Unknown"
+                  vendors.set(v, (vendors.get(v) ?? 0) + 1)
+                }
+                const sorted = [...vendors.entries()].sort((a, b) => b[1] - a[1])
+                return sorted.length > 1 ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] text-muted-foreground shrink-0">By vendor:</span>
+                    {sorted.map(([vendor, count]) => {
+                      const allIncluded = drafts.filter((d) => d.retailer === vendor).every((d) => d.included)
+                      return (
+                        <button
+                          key={vendor}
+                          type="button"
+                          onClick={() => {
+                            const newVal = !allIncluded
+                            setDrafts((prev) => prev.map((d) => d.retailer === vendor ? { ...d, included: newVal } : d))
+                          }}
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
+                            allIncluded
+                              ? "bg-primary/10 border-primary/30 text-primary"
+                              : "bg-muted/50 border-muted-foreground/20 text-muted-foreground line-through"
+                          }`}
+                        >
+                          {vendor} ({count})
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : null
+              })()}
+
               {/* Review tabs */}
               <div className="flex items-center gap-4 border-b">
                 <button
