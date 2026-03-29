@@ -196,6 +196,7 @@ export async function addProduct(
       warranty_expires: product.warranty_expires || null,
       order_id: product.order_id || null,
       ownership: product.ownership || 'mine',
+      visibility: product.visibility || 'shared',
       is_consumable: product.is_consumable || false,
       tags: product.tags || [],
     })
@@ -763,6 +764,7 @@ export async function clearAllData(sb: Client, householdId: string): Promise<voi
 // --- Imported Emails ---
 
 export async function getImportedEmailIds(sb: Client, householdId: string): Promise<Set<string>> {
+  if (!householdId) return new Set()
   const { data, error } = await sb
     .from('imported_emails')
     .select('gmail_message_id')

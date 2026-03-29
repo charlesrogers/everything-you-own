@@ -14,6 +14,7 @@ import {
 import type { GmailMessageMeta } from "@/lib/gmail"
 import { parseReceiptEmail, classifyEmail, htmlToText } from "@/lib/receipt-parser"
 import { useStore } from "@/hooks/use-store"
+import { useAuth } from "@/components/auth-provider"
 import type { Category, Subcategory, ProductOwnership } from "@/lib/types"
 import { OWNERSHIP_OPTIONS, EXPENSE_TAGS } from "@/lib/constants"
 import { CsvImport } from "./csv-import"
@@ -54,6 +55,7 @@ export default function ImportPage() {
 
 function ImportContent() {
   const searchParams = useSearchParams()
+  const { householdId } = useAuth()
   const store = useStore()
   const [phase, setPhase] = useState<Phase>("connect")
   const [token, setToken] = useState("")
@@ -77,6 +79,7 @@ function ImportContent() {
   const [activeTab, setActiveTab] = useState<"gmail" | "csv">("gmail")
 
   useEffect(() => {
+    if (!householdId) return
     async function init() {
       await store.ensureDefaultCategories()
       const [cats, subs] = await Promise.all([
@@ -87,7 +90,7 @@ function ImportContent() {
       setSubcategories(subs)
     }
     init()
-  }, [store])
+  }, [store, householdId])
 
   // Check for OAuth redirect callback
   useEffect(() => {
@@ -116,10 +119,10 @@ function ImportContent() {
 
   // Auto-load emails when entering select phase with a token
   useEffect(() => {
-    if (phase === "select" && token && emails.length === 0) {
+    if (phase === "select" && token && emails.length === 0 && householdId) {
       loadEmails(token, timeframe)
     }
-  }, [phase, token]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, token, householdId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Phase 1: Connect ---
 
@@ -160,7 +163,7 @@ function ImportContent() {
         setPhase("connect")
         return
       }
-      setError(e instanceof Error ? e.message : "Failed to load emails")
+      setError(e instanceof Error ? `Failed to load emails: ${e.message}` : "Failed to load emails")
     } finally {
       setLoadingMore(false)
     }
