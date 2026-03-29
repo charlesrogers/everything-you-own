@@ -659,38 +659,44 @@ function ImportContent() {
     const toSave = drafts.filter((d) => d.included)
     const emailIds = new Set<string>()
     let savedCount = 0
+    const errors: string[] = []
 
     for (const draft of toSave) {
-      // Skip exact duplicates: same name + brand + order_id already exists
-      const dupes = await store.checkDuplicates({
-        name: draft.name,
-        brand: draft.brand || undefined,
-        sku: draft.order_id || undefined,
-      })
-      if (dupes.exact.length > 0) {
-        console.log(`Skipping duplicate: ${draft.name} (order ${draft.order_id})`)
-        emailIds.add(draft.emailId) // Still mark email as imported
-        continue
-      }
+      try {
+        // Skip exact duplicates
+        const dupes = await store.checkDuplicates({
+          name: draft.name,
+          brand: draft.brand || undefined,
+        }).catch(() => ({ exact: [], fuzzy: [] }))
 
-      const newProduct = await store.addProduct({
-        name: draft.name, brand: draft.brand || undefined,
-        category_id: draft.category_id, subcategory_id: draft.subcategory_id,
-        price: draft.price ? parseFloat(draft.price) : undefined,
-        retailer: draft.retailer || undefined, order_id: draft.order_id || undefined,
-        purchase_date: draft.purchase_date || undefined, ownership: draft.ownership,
-        is_consumable: draft.is_consumable || undefined, source_url: draft.source_url || undefined,
-        visibility: "shared", status: "purchased", currency: "USD", tags: draft.tags,
-      })
-      if (draft.location_id) {
-        await store.addProductToLocation({ product_id: newProduct.id, location_id: draft.location_id })
-        localStorage.setItem("eyo_last_bin_id", draft.location_id)
+        if (dupes.exact.length > 0) {
+          emailIds.add(draft.emailId)
+          continue
+        }
+
+        const newProduct = await store.addProduct({
+          name: draft.name, brand: draft.brand || undefined,
+          category_id: draft.category_id, subcategory_id: draft.subcategory_id || "",
+          price: draft.price ? parseFloat(draft.price) : undefined,
+          retailer: draft.retailer || undefined, order_id: draft.order_id || undefined,
+          purchase_date: draft.purchase_date || undefined, ownership: draft.ownership,
+          is_consumable: draft.is_consumable || undefined, source_url: draft.source_url || undefined,
+          visibility: "shared", status: "purchased", currency: "USD", tags: draft.tags,
+        })
+        if (draft.location_id) {
+          await store.addProductToLocation({ product_id: newProduct.id, location_id: draft.location_id }).catch(() => {})
+          localStorage.setItem("eyo_last_bin_id", draft.location_id)
+        }
+        emailIds.add(draft.emailId)
+        savedCount++
+      } catch (err) {
+        console.error(`Failed to save "${draft.name}":`, err)
+        errors.push(draft.name)
       }
-      emailIds.add(draft.emailId)
-      savedCount++
     }
 
-    await store.markEmailsImported([...emailIds])
+    // Mark emails as imported (don't let this block the save)
+    await store.markEmailsImported([...emailIds]).catch(() => {})
 
     const logEntries = [
       ...toSave.map((d) => ({ gmail_message_id: d.emailId, email_subject: d.name, email_from: d.retailer, email_date: d.purchase_date, status: "imported" as const, products_extracted: 1 })),
@@ -1457,21 +1463,28 @@ function ImportContent() {
                       </div>
                     )}
 
-                    {/* Exclude vendor */}
+                    {/* Exclude vendor checkbox */}
                     {draft.retailer && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          addExcludedVendor(draft.retailer)
-                          // Also uncheck all products from this vendor on current page
-                          setDrafts((prev) => prev.map((d) =>
-                            d.retailer.toLowerCase() === draft.retailer.toLowerCase() ? { ...d, included: false } : d
-                          ))
-                        }}
-                        className="text-[11px] text-destructive/70 hover:text-destructive hover:underline"
-                      >
-                        Always exclude {draft.retailer}
-                      </button>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isVendorExcluded(draft.retailer)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              addExcludedVendor(draft.retailer)
+                              setDrafts((prev) => prev.map((d) =>
+                                d.retailer.toLowerCase() === draft.retailer.toLowerCase() ? { ...d, included: false } : d
+                              ))
+                            } else {
+                              removeExcludedVendor(draft.retailer.toLowerCase().trim())
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        <span className="text-[11px] text-muted-foreground">
+                          Always exclude <strong>{draft.retailer}</strong>
+                        </span>
+                      </label>
                     )}
 
                     {/* Email body on every product */}
