@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, Suspense } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import {
@@ -60,6 +60,124 @@ interface ImportLocation {
   id: string
   name: string
   path: string
+}
+
+function VendorFilter({ drafts, onToggle }: { drafts: DraftProduct[]; onToggle: (vendor: string, included: boolean) => void }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState("")
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
+
+  // Build vendor stats
+  const vendors = useMemo(() => {
+    const map = new Map<string, { total: number; included: number }>()
+    for (const d of drafts) {
+      const v = d.retailer || "Unknown"
+      const entry = map.get(v) || { total: 0, included: 0 }
+      entry.total++
+      if (d.included) entry.included++
+      map.set(v, entry)
+    }
+    return [...map.entries()]
+      .map(([name, stats]) => ({ name, ...stats }))
+      .sort((a, b) => b.total - a.total)
+  }, [drafts])
+
+  const excludedCount = vendors.filter((v) => v.included === 0).length
+  const filtered = search.trim()
+    ? vendors.filter((v) => v.name.toLowerCase().includes(search.toLowerCase()))
+    : vendors
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+          excludedCount > 0
+            ? "bg-amber-500/10 border-amber-500/30 text-amber-600"
+            : "bg-secondary border-transparent text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Vendors ({vendors.length})
+        {excludedCount > 0 && <span>· {excludedCount} excluded</span>}
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 left-0 w-72 rounded-lg border bg-card shadow-lg overflow-hidden">
+          {/* Search */}
+          <div className="border-b px-3 py-2">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search vendors..."
+              className="w-full text-[12px] bg-transparent outline-none"
+              autoFocus
+            />
+          </div>
+
+          {/* Quick actions */}
+          <div className="flex gap-2 px-3 py-1.5 border-b text-[11px]">
+            <button
+              type="button"
+              onClick={() => { for (const v of vendors) onToggle(v.name, true) }}
+              className="text-primary hover:underline"
+            >
+              Include all
+            </button>
+            <button
+              type="button"
+              onClick={() => { for (const v of vendors) onToggle(v.name, false) }}
+              className="text-destructive hover:underline"
+            >
+              Exclude all
+            </button>
+          </div>
+
+          {/* Vendor list */}
+          <div className="max-h-64 overflow-y-auto">
+            {filtered.map((v) => {
+              const allIncluded = v.included === v.total
+              const noneIncluded = v.included === 0
+              return (
+                <label
+                  key={v.name}
+                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-accent cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={allIncluded}
+                    ref={(el) => { if (el) el.indeterminate = !allIncluded && !noneIncluded }}
+                    onChange={() => onToggle(v.name, noneIncluded || !allIncluded)}
+                    className="rounded"
+                  />
+                  <span className={`text-[12px] flex-1 truncate ${noneIncluded ? "line-through text-muted-foreground" : ""}`}>
+                    {v.name}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {v.included}/{v.total}
+                  </span>
+                </label>
+              )
+            })}
+            {filtered.length === 0 && (
+              <div className="px-3 py-4 text-[12px] text-muted-foreground text-center">
+                No vendors match &quot;{search}&quot;
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function ImportPage() {
@@ -927,40 +1045,10 @@ function ImportContent() {
             </div>
           ) : (
             <>
-              {/* Vendor quick-actions */}
-              {(() => {
-                const vendors = new Map<string, number>()
-                for (const d of drafts) {
-                  const v = d.retailer || "Unknown"
-                  vendors.set(v, (vendors.get(v) ?? 0) + 1)
-                }
-                const sorted = [...vendors.entries()].sort((a, b) => b[1] - a[1])
-                return sorted.length > 1 ? (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[11px] text-muted-foreground shrink-0">By vendor:</span>
-                    {sorted.map(([vendor, count]) => {
-                      const allIncluded = drafts.filter((d) => d.retailer === vendor).every((d) => d.included)
-                      return (
-                        <button
-                          key={vendor}
-                          type="button"
-                          onClick={() => {
-                            const newVal = !allIncluded
-                            setDrafts((prev) => prev.map((d) => d.retailer === vendor ? { ...d, included: newVal } : d))
-                          }}
-                          className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
-                            allIncluded
-                              ? "bg-primary/10 border-primary/30 text-primary"
-                              : "bg-muted/50 border-muted-foreground/20 text-muted-foreground line-through"
-                          }`}
-                        >
-                          {vendor} ({count})
-                        </button>
-                      )
-                    })}
-                  </div>
-                ) : null
-              })()}
+              {/* Vendor filter dropdown */}
+              <VendorFilter drafts={drafts} onToggle={(vendor, included) => {
+                setDrafts((prev) => prev.map((d) => d.retailer === vendor ? { ...d, included } : d))
+              }} />
 
               {/* Review tabs */}
               <div className="flex items-center gap-4 border-b">
