@@ -96,6 +96,13 @@ function ImportContent() {
   const [hideImported, setHideImported] = useState(true)
   const [bulkLocationId, setBulkLocationId] = useState("")
 
+  // Batch processing
+  const BATCH_SIZE = 20
+  const [selectedForProcessing, setSelectedForProcessing] = useState<EmailEntry[]>([])
+  const [batchIndex, setBatchIndex] = useState(0)
+  const [totalBatches, setTotalBatches] = useState(0)
+  const [allSavedCount, setAllSavedCount] = useState(0)
+
   // Shared
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
@@ -261,17 +268,33 @@ function ImportContent() {
     const selected = emails.filter((e) => e.selected)
     if (selected.length === 0) return
 
+    // Store all selected emails and start with first batch
+    setSelectedForProcessing(selected)
+    const batches = Math.ceil(selected.length / BATCH_SIZE)
+    setTotalBatches(batches)
+    setBatchIndex(0)
+    setAllSavedCount(0)
+    setDrafts([])
+    setRejectedEmails([])
     setPhase("review")
-    setProcessing(true)
-    setProcessProgress({ current: 0, total: selected.length })
 
-    // Step 1: Fetch all email bodies
+    await processBatch(selected, 0)
+  }
+
+  const processBatch = async (allSelected: EmailEntry[], startIdx: number) => {
+    const batchEmails = allSelected.slice(startIdx, startIdx + BATCH_SIZE)
+    if (batchEmails.length === 0) return
+
+    setProcessing(true)
+    setProcessProgress({ current: 0, total: batchEmails.length })
+
+    // Step 1: Fetch email bodies for this batch
     const emailBodies: { id: string; subject: string; from: string; date: string; body: string; bodyText: string }[] = []
     const rejected: RejectedEmail[] = []
 
-    for (let i = 0; i < selected.length; i++) {
-      const email = selected[i]
-      setProcessProgress({ current: i + 1, total: selected.length })
+    for (let i = 0; i < batchEmails.length; i++) {
+      const email = batchEmails[i]
+      setProcessProgress({ current: i + 1, total: batchEmails.length })
 
       const emailType = classifyEmail(email.subject)
       if (emailType !== "order" && emailType !== "unknown") {
@@ -299,33 +322,19 @@ function ImportContent() {
       }
     }
 
-    if (emailBodies.length === 0) {
-      setDrafts([])
-      setProcessing(false)
-      return
-    }
+    // Step 2: Extract products (Claude API with regex fallback)
+    const batchDrafts: DraftProduct[] = []
+    const apiBatchSize = 10
 
-    // Step 2: Send to Claude API for extraction (batch in groups of 10)
-    const allDrafts: DraftProduct[] = []
-    const batchSize = 10
-
-    for (let b = 0; b < emailBodies.length; b += batchSize) {
-      const batch = emailBodies.slice(b, b + batchSize)
+    for (let b = 0; b < emailBodies.length; b += apiBatchSize) {
+      const apiBatch = emailBodies.slice(b, b + apiBatchSize)
       try {
         const res = await fetch("/api/parse-receipts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            emails: batch.map(e => ({
-              subject: e.subject,
-              from: e.from,
-              date: e.date,
-              body: e.body,
-            })),
-            categories: categories.map(c => ({
-              name: c.name,
-              subcategories: subcategories.filter(s => s.category_id === c.id).map(s => s.name),
-            })),
+            emails: apiBatch.map(e => ({ subject: e.subject, from: e.from, date: e.date, body: e.body })),
+            categories: categories.map(c => ({ name: c.name, subcategories: subcategories.filter(s => s.category_id === c.id).map(s => s.name) })),
           }),
         })
         const data = await res.json()
@@ -333,87 +342,52 @@ function ImportContent() {
         if (data.products && Array.isArray(data.products)) {
           for (const product of data.products) {
             const { categoryId, subcategoryId } = mapCategoryGuess(product.category || null, product.subcategory || null)
-
             const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
-            const duplicateWarning =
-              dupes.exact.length > 0
-                ? `Exact match: ${dupes.exact[0].name}`
-                : dupes.fuzzy.length > 0
-                  ? `Similar: ${dupes.fuzzy[0].name}`
-                  : null
+            const duplicateWarning = dupes.exact.length > 0 ? `Exact match: ${dupes.exact[0].name}` : dupes.fuzzy.length > 0 ? `Similar: ${dupes.fuzzy[0].name}` : null
+            const matchEmail = apiBatch.find(e => e.from.toLowerCase().includes((product.retailer || "").toLowerCase()) || e.subject.toLowerCase().includes((product.name || "").toLowerCase().slice(0, 20))) || apiBatch[0]
 
-            // Find which email this product came from (best guess by retailer/date)
-            const matchEmail = batch.find(e =>
-              e.from.toLowerCase().includes((product.retailer || "").toLowerCase()) ||
-              e.subject.toLowerCase().includes((product.name || "").toLowerCase().slice(0, 20))
-            ) || batch[0]
-
-            allDrafts.push({
-              emailId: matchEmail.id,
-              name: product.name || "",
-              brand: product.brand || "",
-              price: product.price?.toString() || "",
-              retailer: product.retailer || "",
-              order_id: product.order_id || "",
-              purchase_date: product.purchase_date || "",
-              category_id: categoryId,
-              subcategory_id: subcategoryId,
-              ownership: "mine",
-              is_consumable: product.is_consumable || false,
-              source_url: "",
-              included: !duplicateWarning?.startsWith("Exact"),
-              duplicateWarning,
-              emailBody: matchEmail.bodyText,
-              tags: [],
-              location_id: "",
+            batchDrafts.push({
+              emailId: matchEmail.id, name: product.name || "", brand: product.brand || "",
+              price: product.price?.toString() || "", retailer: product.retailer || "",
+              order_id: product.order_id || "", purchase_date: product.purchase_date || "",
+              category_id: categoryId, subcategory_id: subcategoryId, ownership: "mine",
+              is_consumable: product.is_consumable || false, source_url: "",
+              included: !duplicateWarning?.startsWith("Exact"), duplicateWarning,
+              emailBody: matchEmail.bodyText, tags: [], location_id: bulkLocationId,
             })
           }
         }
       } catch (e) {
-        console.error("Claude API error, falling back to regex for batch:", e)
-        // Fallback: use regex parser for this batch
-        for (const email of batch) {
+        console.error("Claude API error, falling back to regex:", e)
+        for (const email of apiBatch) {
           const result = parseReceiptEmail(email.body, email.subject, email.from, email.date)
           for (const product of result.products) {
             const { categoryId, subcategoryId } = mapCategoryGuess(product.category_guess)
             const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
-            const duplicateWarning =
-              dupes.exact.length > 0 ? `Exact match: ${dupes.exact[0].name}`
-              : dupes.fuzzy.length > 0 ? `Similar: ${dupes.fuzzy[0].name}`
-              : null
-            allDrafts.push({
-              emailId: email.id,
-              name: product.name,
-              brand: product.brand || "",
-              price: product.price?.toString() || "",
-              retailer: product.retailer,
-              order_id: product.order_id || "",
-              purchase_date: product.purchase_date || "",
-              category_id: categoryId,
-              subcategory_id: subcategoryId,
-              ownership: "mine",
-              is_consumable: product.is_consumable,
-              source_url: product.source_url || "",
-              included: !duplicateWarning?.startsWith("Exact"),
-              duplicateWarning,
-              emailBody: email.bodyText,
-              tags: [],
-              location_id: "",
+            const duplicateWarning = dupes.exact.length > 0 ? `Exact match: ${dupes.exact[0].name}` : dupes.fuzzy.length > 0 ? `Similar: ${dupes.fuzzy[0].name}` : null
+            batchDrafts.push({
+              emailId: email.id, name: product.name, brand: product.brand || "",
+              price: product.price?.toString() || "", retailer: product.retailer,
+              order_id: product.order_id || "", purchase_date: product.purchase_date || "",
+              category_id: categoryId, subcategory_id: subcategoryId, ownership: "mine",
+              is_consumable: product.is_consumable, source_url: product.source_url || "",
+              included: !duplicateWarning?.startsWith("Exact"), duplicateWarning,
+              emailBody: email.bodyText, tags: [], location_id: bulkLocationId,
             })
           }
         }
       }
     }
 
-    // Also add emails that produced 0 products to rejected
-    const draftEmailIds = new Set(allDrafts.map((d) => d.emailId))
+    // Emails with 0 products → rejected
+    const draftEmailIds = new Set(batchDrafts.map((d) => d.emailId))
     for (const eb of emailBodies) {
       if (!draftEmailIds.has(eb.id)) {
         rejected.push({ id: eb.id, subject: eb.subject, from: eb.from, date: eb.date, reason: "0 products extracted", bodyText: eb.bodyText })
       }
     }
 
-    setDrafts(allDrafts)
+    setDrafts(batchDrafts)
     setRejectedEmails(rejected)
     setReviewTab("products")
     setProcessing(false)
@@ -487,6 +461,7 @@ function ImportContent() {
       await store.logProcessedEmails(logEntries).catch(() => {})
     }
 
+    setAllSavedCount((prev) => prev + toSave.length)
     setSaved(true)
   }
 
@@ -1082,18 +1057,47 @@ function ImportContent() {
                 ))}
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <span className="text-[12px] text-muted-foreground">
-                  {includedCount} of {drafts.length} will be saved
-                </span>
-                <button
-                  onClick={handleSave}
-                  disabled={includedCount === 0}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
-                >
-                  <Check className="size-3.5" />
-                  Save {includedCount} Product{includedCount !== 1 ? "s" : ""}
-                </button>
+              {/* Batch progress + save buttons */}
+              <div className="rounded-lg border bg-secondary/30 p-3 space-y-2">
+                {totalBatches > 1 && (
+                  <div className="flex items-center justify-between text-[12px] text-muted-foreground">
+                    <span>Batch {Math.floor(batchIndex / BATCH_SIZE) + 1} of {totalBatches} &middot; {selectedForProcessing.length} emails total</span>
+                    {allSavedCount > 0 && <span>{allSavedCount} products saved so far</span>}
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] text-muted-foreground">
+                    {includedCount} of {drafts.length} will be saved
+                  </span>
+                  <div className="flex gap-2">
+                    {/* Save & Next Batch (if more batches remain) */}
+                    {batchIndex + BATCH_SIZE < selectedForProcessing.length && (
+                      <button
+                        onClick={async () => {
+                          await handleSave()
+                          const nextIdx = batchIndex + BATCH_SIZE
+                          setBatchIndex(nextIdx)
+                          setSaved(false)
+                          await processBatch(selectedForProcessing, nextIdx)
+                        }}
+                        disabled={includedCount === 0}
+                        className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-[13px] font-medium hover:bg-accent transition-colors disabled:opacity-50"
+                      >
+                        Save & Next Batch →
+                      </button>
+                    )}
+                    <button
+                      onClick={handleSave}
+                      disabled={includedCount === 0}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
+                    >
+                      <Check className="size-3.5" />
+                      {batchIndex + BATCH_SIZE < selectedForProcessing.length
+                        ? `Save ${includedCount} & Done`
+                        : `Save ${includedCount} Product${includedCount !== 1 ? "s" : ""}`}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               </>)} {/* end products tab */}
