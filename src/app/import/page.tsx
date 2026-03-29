@@ -18,6 +18,16 @@ import { useAuth } from "@/components/auth-provider"
 import type { Category, Subcategory, ProductOwnership } from "@/lib/types"
 import { OWNERSHIP_OPTIONS, EXPENSE_TAGS } from "@/lib/constants"
 import { CsvImport } from "./csv-import"
+import { SearchableLocationPicker, buildLocationOptions } from "@/components/searchable-location-picker"
+
+interface RejectedEmail {
+  id: string
+  subject: string
+  from: string
+  date: string
+  reason: string
+  bodyText: string
+}
 
 type Phase = "connect" | "select" | "review"
 
@@ -80,6 +90,10 @@ function ImportContent() {
   const [processing, setProcessing] = useState(false)
   const [saved, setSaved] = useState(false)
   const [importLocations, setImportLocations] = useState<ImportLocation[]>([])
+  const [locationOptions, setLocationOptions] = useState<ReturnType<typeof buildLocationOptions>>([])
+  const [rejectedEmails, setRejectedEmails] = useState<RejectedEmail[]>([])
+  const [reviewTab, setReviewTab] = useState<"products" | "rejected">("products")
+  const [hideImported, setHideImported] = useState(true)
   const [bulkLocationId, setBulkLocationId] = useState("")
 
   // Shared
@@ -98,19 +112,15 @@ function ImportContent() {
       setCategories(cats)
       setSubcategories(subs)
 
-      // Load locations for bin picker
+      // Load locations for picker — all types, tree-ordered
       try {
         const res = await fetch("/api/storage")
         const data = await res.json()
-        const locs = (data.locations ?? []) as Array<{ id: string; name: string; parent_id: string | null; unit_subtype: string | null }>
-        const locMap = new Map(locs.map((l) => [l.id, l]))
-        function getPath(id: string): string {
-          const parts: string[] = []
-          let cur = locMap.get(id)
-          while (cur) { parts.unshift(cur.name); cur = cur.parent_id ? locMap.get(cur.parent_id) : undefined }
-          return parts.join(" \u203a ")
-        }
-        const bins = locs.filter((l) => l.unit_subtype === "bin").map((l) => ({ id: l.id, name: l.name, path: getPath(l.id) }))
+        const locs = (data.locations ?? []) as Array<{ id: string; name: string; parent_id: string | null; location_type: string; unit_subtype: string | null }>
+        const opts = buildLocationOptions(locs)
+        setLocationOptions(opts)
+        // Also keep bins-only list for backward compat
+        const bins = opts.filter((l) => l.subtype === "bin").map((l) => ({ id: l.id, name: l.name, path: l.path }))
         setImportLocations(bins)
       } catch {}
     }
@@ -257,13 +267,17 @@ function ImportContent() {
 
     // Step 1: Fetch all email bodies
     const emailBodies: { id: string; subject: string; from: string; date: string; body: string; bodyText: string }[] = []
+    const rejected: RejectedEmail[] = []
 
     for (let i = 0; i < selected.length; i++) {
       const email = selected[i]
       setProcessProgress({ current: i + 1, total: selected.length })
 
       const emailType = classifyEmail(email.subject)
-      if (emailType !== "order" && emailType !== "unknown") continue
+      if (emailType !== "order" && emailType !== "unknown") {
+        rejected.push({ id: email.id, subject: email.subject, from: email.from, date: email.date, reason: emailType, bodyText: "" })
+        continue
+      }
 
       try {
         const html = await getMessageBody(token, email.id)
@@ -391,7 +405,17 @@ function ImportContent() {
       }
     }
 
+    // Also add emails that produced 0 products to rejected
+    const draftEmailIds = new Set(allDrafts.map((d) => d.emailId))
+    for (const eb of emailBodies) {
+      if (!draftEmailIds.has(eb.id)) {
+        rejected.push({ id: eb.id, subject: eb.subject, from: eb.from, date: eb.date, reason: "0 products extracted", bodyText: eb.bodyText })
+      }
+    }
+
     setDrafts(allDrafts)
+    setRejectedEmails(rejected)
+    setReviewTab("products")
     setProcessing(false)
   }
 
@@ -646,8 +670,29 @@ function ImportContent() {
             </div>
           ) : (
             <>
+              {/* Import filter */}
+              {(() => {
+                const importedCount = emails.filter((e) => e.alreadyImported).length
+                return importedCount > 0 ? (
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[12px] text-muted-foreground">
+                      {emails.length} emails &middot; {importedCount} already imported
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setHideImported(!hideImported)}
+                      className={`text-[11px] font-medium px-2 py-1 rounded-lg transition-colors ${
+                        hideImported ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground"
+                      }`}
+                    >
+                      {hideImported ? "Show imported" : "Hide imported"}
+                    </button>
+                  </div>
+                ) : null
+              })()}
+
               <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden divide-y">
-                {emails.map((email) => (
+                {emails.filter((e) => !hideImported || !e.alreadyImported).map((email) => (
                   <label
                     key={email.id}
                     className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-accent/50 transition-colors ${
@@ -781,30 +826,45 @@ function ImportContent() {
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between">
-                <p className="text-[13px] text-muted-foreground">
-                  {drafts.length} product{drafts.length !== 1 ? "s" : ""} extracted — review before saving
-                </p>
+              {/* Review tabs */}
+              <div className="flex items-center gap-4 border-b">
+                <button
+                  onClick={() => setReviewTab("products")}
+                  className={`pb-2 text-[13px] font-medium border-b-2 transition-colors ${
+                    reviewTab === "products" ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+                  }`}
+                >
+                  Products ({drafts.filter((d) => d.included).length})
+                </button>
+                {rejectedEmails.length > 0 && (
+                  <button
+                    onClick={() => setReviewTab("rejected")}
+                    className={`pb-2 text-[13px] font-medium border-b-2 transition-colors ${
+                      reviewTab === "rejected" ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+                    }`}
+                  >
+                    Rejected ({rejectedEmails.length})
+                  </button>
+                )}
               </div>
 
+              {/* Products tab */}
+              {reviewTab === "products" && (<>
+
               {/* Bulk location assignment */}
-              {importLocations.length > 0 && (
-                <div className="rounded-lg border bg-secondary/30 p-3 flex items-center gap-3">
-                  <span className="text-[12px] font-medium shrink-0">Set all to:</span>
-                  <select
-                    value={bulkLocationId}
-                    onChange={(e) => {
-                      const locId = e.target.value
-                      setBulkLocationId(locId)
-                      setDrafts((prev) => prev.map((d) => ({ ...d, location_id: locId })))
-                    }}
-                    className="flex-1 rounded-lg border bg-background px-3 py-1.5 text-[12px]"
-                  >
-                    <option value="">No location</option>
-                    {importLocations.map((loc) => (
-                      <option key={loc.id} value={loc.id}>{loc.path}</option>
-                    ))}
-                  </select>
+              {locationOptions.length > 0 && (
+                <div className="rounded-lg border bg-secondary/30 p-3 space-y-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[12px] font-medium shrink-0">Set all to:</span>
+                    <SearchableLocationPicker
+                      locations={locationOptions}
+                      value={bulkLocationId}
+                      onChange={(id) => {
+                        setBulkLocationId(id)
+                        setDrafts((prev) => prev.map((d) => ({ ...d, location_id: id })))
+                      }}
+                      className="flex-1"
+                    />
                   {(() => {
                     const lastBinId = typeof window !== "undefined" ? localStorage.getItem("eyo_last_bin_id") : null
                     const lastBin = lastBinId ? importLocations.find((l) => l.id === lastBinId) : null
@@ -969,19 +1029,15 @@ function ImportContent() {
                     </div>
 
                     {/* Storage location */}
-                    {importLocations.length > 0 && (
+                    {locationOptions.length > 0 && (
                       <div>
                         <label className="text-[11px] text-muted-foreground">Storage Location</label>
-                        <select
+                        <SearchableLocationPicker
+                          locations={locationOptions}
                           value={draft.location_id}
-                          onChange={(e) => updateDraft(i, "location_id", e.target.value)}
-                          className="w-full rounded-lg border bg-background px-3 py-1.5 text-[13px]"
-                        >
-                          <option value="">No location (unsorted)</option>
-                          {importLocations.map((loc) => (
-                            <option key={loc.id} value={loc.id}>{loc.path}</option>
-                          ))}
-                        </select>
+                          onChange={(id) => updateDraft(i, "location_id", id)}
+                          placeholder="Search locations..."
+                        />
                       </div>
                     )}
 
@@ -1014,6 +1070,115 @@ function ImportContent() {
                   Save {includedCount} Product{includedCount !== 1 ? "s" : ""}
                 </button>
               </div>
+
+              </>)} {/* end products tab */}
+
+              {/* Rejected tab */}
+              {reviewTab === "rejected" && (
+                <div className="space-y-3">
+                  <p className="text-[12px] text-muted-foreground">
+                    These emails were skipped because they didn&apos;t look like purchase receipts or no products could be extracted.
+                  </p>
+                  {rejectedEmails.length === 0 ? (
+                    <div className="p-8 text-center text-[13px] text-muted-foreground">
+                      No rejected emails in this batch.
+                    </div>
+                  ) : rejectedEmails.map((rej) => (
+                    <div key={rej.id} className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] p-4 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[13px] font-medium">{rej.subject}</p>
+                          <p className="text-[11px] text-muted-foreground">{rej.from} &middot; {rej.date}</p>
+                        </div>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
+                          {rej.reason}
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Re-parse: force parse the email body and add any products found
+                            const parsed = parseReceiptEmail(rej.bodyText, rej.subject, rej.from)
+                            if (parsed.products.length > 0) {
+                              const newDrafts: DraftProduct[] = parsed.products.map((p) => ({
+                                emailId: rej.id,
+                                name: p.name,
+                                brand: p.brand || "",
+                                price: p.price?.toString() || "",
+                                retailer: p.retailer || rej.from.replace(/<.*>/, "").trim(),
+                                order_id: p.order_id || "",
+                                purchase_date: p.purchase_date || rej.date,
+                                category_id: "",
+                                subcategory_id: "",
+                                ownership: "mine",
+                                is_consumable: false,
+                                source_url: "",
+                                included: true,
+                                duplicateWarning: null,
+                                emailBody: rej.bodyText,
+                                tags: [],
+                                location_id: bulkLocationId,
+                              }))
+                              setDrafts((prev) => [...prev, ...newDrafts])
+                              setRejectedEmails((prev) => prev.filter((r) => r.id !== rej.id))
+                              setReviewTab("products")
+                            } else {
+                              alert("Still no products found in this email.")
+                            }
+                          }}
+                          className="text-[11px] text-primary font-medium hover:underline"
+                        >
+                          Re-check
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Add blank product manually from this email
+                            const newDraft: DraftProduct = {
+                              emailId: rej.id,
+                              name: "",
+                              brand: "",
+                              price: "",
+                              retailer: rej.from.replace(/<.*>/, "").trim(),
+                              order_id: "",
+                              purchase_date: rej.date,
+                              category_id: "",
+                              subcategory_id: "",
+                              ownership: "mine",
+                              is_consumable: false,
+                              source_url: "",
+                              included: true,
+                              duplicateWarning: null,
+                              emailBody: rej.bodyText,
+                              tags: [],
+                              location_id: bulkLocationId,
+                            }
+                            setDrafts((prev) => [...prev, newDraft])
+                            setRejectedEmails((prev) => prev.filter((r) => r.id !== rej.id))
+                            setReviewTab("products")
+                          }}
+                          className="text-[11px] text-muted-foreground font-medium hover:underline"
+                        >
+                          Add manually
+                        </button>
+                      </div>
+                      {rej.bodyText && (
+                        <details className="group">
+                          <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-1">
+                            <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
+                            See email
+                          </summary>
+                          <pre className="mt-2 p-3 rounded-lg bg-muted/50 text-[11px] text-muted-foreground whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto leading-relaxed">
+                            {rej.bodyText}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
             </>
           )}
         </div>

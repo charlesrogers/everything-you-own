@@ -47,8 +47,17 @@ export function classifyEmail(subject: string): EmailType {
   // Shipping
   if (/\b(has shipped|is shipping|now shipping|shipment|tracking number|track your|is on its way)\b/i.test(s)) return "shipping"
 
+  // Abandoned cart / browse reminders
+  if (/\b(still considering|abandoned cart|items? you left|complete your purchase|forgot something|left behind|finish your order|still interested|still want|did you forget)\b/i.test(s)) return "promo"
+
+  // Wishlist / save for later
+  if (/\b(wishlist|wish list|save for later|saved items?|price drop on|back in stock)\b/i.test(s)) return "promo"
+
+  // Pending / not yet purchased
+  if (/\b(pending|awaiting payment|payment pending|order pending)\b/i.test(s)) return "promo"
+
   // Promo
-  if (/\b(final call|save \$|% off your order|don't miss|last chance|exclusive offer)\b/i.test(s)) return "promo"
+  if (/\b(final call|save \$|% off your order|don't miss|last chance|exclusive offer|flash sale|deal of|limited time)\b/i.test(s)) return "promo"
 
   return "order"
 }
