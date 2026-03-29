@@ -46,18 +46,18 @@ function generateShortId(): string {
 // ============================================
 
 const TEMPLATES: LocationTemplate[] = [
-  { id: 'samla_1gal',  name: 'SAMLA 1 gal',    category: 'bin',     width_in: 11,    depth_in: 7.5,   height_in: 5.5,  volume_gal: 1,    default_compartments: null },
-  { id: 'samla_3gal',  name: 'SAMLA 3 gal',    category: 'bin',     width_in: 15.25, depth_in: 11,    height_in: 5.5,  volume_gal: 3,    default_compartments: null },
-  { id: 'samla_6gal',  name: 'SAMLA 6 gal',    category: 'bin',     width_in: 15.25, depth_in: 11,    height_in: 11,   volume_gal: 6,    default_compartments: null },
-  { id: 'samla_12gal', name: 'SAMLA 12 gal',   category: 'bin',     width_in: 22,    depth_in: 15.25, height_in: 11,   volume_gal: 12,   default_compartments: null },
-  { id: 'samla_15gal', name: 'SAMLA 15 gal',   category: 'bin',     width_in: 30.75, depth_in: 22,    height_in: 7,    volume_gal: 15,   default_compartments: null },
-  { id: 'samla_17gal', name: 'SAMLA 17 gal',   category: 'bin',     width_in: 22.5,  depth_in: 15.25, height_in: 16.5, volume_gal: 17,   default_compartments: null },
-  { id: 'samla_34gal', name: 'SAMLA 34 gal',   category: 'bin',     width_in: 30.75, depth_in: 22,    height_in: 17,   volume_gal: 34,   default_compartments: null },
-  { id: 'omar_rack',   name: 'IKEA OMAR Rack', category: 'rack',    width_in: 36.25, depth_in: 14,    height_in: 72,   volume_gal: null, default_compartments: { count: 6, type: 'shelf', height_in: 11.5 } },
-  { id: 'tool_chest',  name: 'Tool Chest',     category: 'cabinet', width_in: null,  depth_in: null,  height_in: null, volume_gal: null, default_compartments: null },
-  { id: 'closet',      name: 'Closet',         category: 'closet',  width_in: null,  depth_in: null,  height_in: null, volume_gal: null, default_compartments: null },
-  { id: 'kitchen_drawer', name: 'Kitchen Drawer', category: 'drawer', width_in: null, depth_in: null, height_in: null, volume_gal: null, default_compartments: null },
-  { id: 'custom',      name: 'Custom',         category: 'custom',  width_in: null,  depth_in: null,  height_in: null, volume_gal: null, default_compartments: null },
+  { id: 'samla_1gal',  name: 'SAMLA 1 gal',    category: 'bin',     width_in: 11,    depth_in: 7.5,   height_in: 5.5,  volume_gal: 1,    default_compartments: null, brand: null, household_id: null },
+  { id: 'samla_3gal',  name: 'SAMLA 3 gal',    category: 'bin',     width_in: 15.25, depth_in: 11,    height_in: 5.5,  volume_gal: 3,    default_compartments: null, brand: null, household_id: null },
+  { id: 'samla_6gal',  name: 'SAMLA 6 gal',    category: 'bin',     width_in: 15.25, depth_in: 11,    height_in: 11,   volume_gal: 6,    default_compartments: null, brand: null, household_id: null },
+  { id: 'samla_12gal', name: 'SAMLA 12 gal',   category: 'bin',     width_in: 22,    depth_in: 15.25, height_in: 11,   volume_gal: 12,   default_compartments: null, brand: null, household_id: null },
+  { id: 'samla_15gal', name: 'SAMLA 15 gal',   category: 'bin',     width_in: 30.75, depth_in: 22,    height_in: 7,    volume_gal: 15,   default_compartments: null, brand: null, household_id: null },
+  { id: 'samla_17gal', name: 'SAMLA 17 gal',   category: 'bin',     width_in: 22.5,  depth_in: 15.25, height_in: 16.5, volume_gal: 17,   default_compartments: null, brand: null, household_id: null },
+  { id: 'samla_34gal', name: 'SAMLA 34 gal',   category: 'bin',     width_in: 30.75, depth_in: 22,    height_in: 17,   volume_gal: 34,   default_compartments: null, brand: null, household_id: null },
+  { id: 'omar_rack',   name: 'IKEA OMAR Rack', category: 'rack',    width_in: 36.25, depth_in: 14,    height_in: 72,   volume_gal: null, default_compartments: { count: 6, type: 'shelf', height_in: 11.5 }, brand: null, household_id: null },
+  { id: 'tool_chest',  name: 'Tool Chest',     category: 'cabinet', width_in: null,  depth_in: null,  height_in: null, volume_gal: null, default_compartments: null, brand: null, household_id: null },
+  { id: 'closet',      name: 'Closet',         category: 'closet',  width_in: null,  depth_in: null,  height_in: null, volume_gal: null, default_compartments: null, brand: null, household_id: null },
+  { id: 'kitchen_drawer', name: 'Kitchen Drawer', category: 'drawer', width_in: null, depth_in: null, height_in: null, volume_gal: null, default_compartments: null, brand: null, household_id: null },
+  { id: 'custom',      name: 'Custom',         category: 'custom',  width_in: null,  depth_in: null,  height_in: null, volume_gal: null, default_compartments: null, brand: null, household_id: null },
 ]
 
 export function getLocationTemplates(): LocationTemplate[] {

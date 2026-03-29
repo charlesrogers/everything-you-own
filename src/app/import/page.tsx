@@ -84,6 +84,7 @@ function ImportContent() {
   const [timeframe, setTimeframe] = useState("1y")
   const [customAfter, setCustomAfter] = useState("")
   const [customBefore, setCustomBefore] = useState("")
+  const [loadCancelledRef] = useState({ current: 0 }) // increment to cancel current load
   const [loadingMore, setLoadingMore] = useState(false)
 
   // Phase 3: Review
@@ -215,6 +216,8 @@ function ImportContent() {
 
   // Auto-load ALL emails from the selected timeframe (paginate through everything)
   const loadAllEmails = async (accessToken: string, tf: string) => {
+    // Cancel any in-progress load
+    const loadId = ++loadCancelledRef.current
     setLoadingMore(true)
     setEmails([])
     setNextPageToken(undefined)
@@ -222,28 +225,29 @@ function ImportContent() {
     const imported = await store.getImportedEmailIds()
     let pt: string | undefined = undefined
     let allEntries: EmailEntry[] = []
-    let page = 0
 
     try {
       while (true) {
-        page++
+        if (loadCancelledRef.current !== loadId) return // cancelled
         const result = await searchReceipts(accessToken, tf, pt)
         if (result.messages.length === 0) break
 
         const metas = await batchGetMetadata(accessToken, result.messages.map((m) => m.id))
+        if (loadCancelledRef.current !== loadId) return // cancelled
+
         const entries: EmailEntry[] = metas.map((m) => ({
           ...m,
           selected: !imported.has(m.id),
           alreadyImported: imported.has(m.id),
         }))
         allEntries = [...allEntries, ...entries]
-        setEmails(allEntries) // Update UI progressively
-        setProcessProgress({ current: allEntries.length, total: 0 }) // Show count
+        setEmails([...allEntries]) // Update UI progressively
 
         pt = result.nextPageToken
         if (!pt) break
       }
     } catch (e) {
+      if (loadCancelledRef.current !== loadId) return
       if (e instanceof Error && e.message === "SESSION_EXPIRED") {
         setError("Session expired. Please reconnect.")
         setPhase("connect")
@@ -252,8 +256,10 @@ function ImportContent() {
       console.error("Error loading all emails:", e)
     }
 
-    setNextPageToken(undefined) // All loaded
-    setLoadingMore(false)
+    if (loadCancelledRef.current === loadId) {
+      setNextPageToken(undefined)
+      setLoadingMore(false)
+    }
   }
 
   const handleTimeframeChange = (tf: string) => {
@@ -712,7 +718,11 @@ function ImportContent() {
                   <button
                     onClick={() => {
                       if (customAfter && customBefore) {
-                        const tf = `${customAfter}_${customBefore}`
+                        // Ensure after < before, swap if needed
+                        const [a, b] = customAfter < customBefore ? [customAfter, customBefore] : [customBefore, customAfter]
+                        setCustomAfter(a)
+                        setCustomBefore(b)
+                        const tf = `${a}_${b}`
                         handleTimeframeChange(tf)
                       }
                     }}
@@ -724,7 +734,14 @@ function ImportContent() {
                 </div>
               )}
               <span className="text-[12px] text-muted-foreground">
-                {emails.length} email{emails.length !== 1 ? "s" : ""} loaded
+                {loadingMore ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="size-3 animate-spin" />
+                    Loading... {emails.length} emails so far
+                  </span>
+                ) : (
+                  <>{emails.length} email{emails.length !== 1 ? "s" : ""} loaded</>
+                )}
               </span>
             </div>
             <div className="flex items-center gap-2">

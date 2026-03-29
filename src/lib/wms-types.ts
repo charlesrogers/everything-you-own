@@ -100,11 +100,13 @@ export interface UsageLogEntry {
 export interface LocationTemplate {
   id: string
   name: string
+  brand: string | null
   category: string
   width_in: number | null
   depth_in: number | null
   height_in: number | null
   volume_gal: number | null
+  household_id: string | null
   default_compartments: {
     count: number
     type: string

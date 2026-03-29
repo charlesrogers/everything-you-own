@@ -507,8 +507,35 @@ function mapTemplate(row: Record<string, unknown>): LocationTemplate {
     depth_in: row.depth_in != null ? Number(row.depth_in) : null,
     height_in: row.height_in != null ? Number(row.height_in) : null,
     volume_gal: row.volume_gal != null ? Number(row.volume_gal) : null,
+    household_id: (row.household_id as string) ?? null,
+    brand: (row.brand as string) ?? null,
     default_compartments: row.default_compartments as LocationTemplate['default_compartments'],
   }
+}
+
+export async function createLocationTemplate(
+  sb: Client,
+  householdId: string,
+  template: { name: string; brand?: string; category: string; width_in?: number; depth_in?: number; height_in?: number; volume_gal?: number },
+): Promise<LocationTemplate> {
+  const id = `custom_${Date.now()}`
+  const { data, error } = await sb
+    .from('location_templates')
+    .insert({
+      id,
+      name: template.name,
+      brand: template.brand ?? null,
+      category: template.category,
+      household_id: householdId,
+      width_in: template.width_in ?? null,
+      depth_in: template.depth_in ?? null,
+      height_in: template.height_in ?? null,
+      volume_gal: template.volume_gal ?? null,
+    })
+    .select('*')
+    .single()
+  if (error) throw error
+  return mapTemplate(data)
 }
 
 function mapUsageLogEntry(row: Record<string, unknown>): UsageLogEntry {
