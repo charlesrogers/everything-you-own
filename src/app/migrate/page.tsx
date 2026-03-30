@@ -92,7 +92,7 @@ export default function MigratePage() {
       // Step 4: Build local subcategory ID → Supabase subcategory ID map
       const localSubMap = new Map<string, string>()
       for (const ls of local.subcategories) {
-        const sbCatId = localCatMap.get(ls.category_id)
+        const sbCatId = ls.category_id ? localCatMap.get(ls.category_id) : undefined
         if (!sbCatId) {
           errors.push(`Subcategory "${ls.name}" has unmapped category`)
           continue
@@ -123,8 +123,8 @@ export default function MigratePage() {
         productCount++
         setProgress(`Migrating product ${productCount}/${local.products.length}: ${p.name}`)
 
-        const sbCatId = localCatMap.get(p.category_id)
-        const sbSubId = localSubMap.get(p.subcategory_id)
+        const sbCatId = p.category_id ? localCatMap.get(p.category_id) : undefined
+        const sbSubId = p.subcategory_id ? localSubMap.get(p.subcategory_id) : undefined
         if (!sbCatId || !sbSubId) {
           errors.push(`Product "${p.name}" has unmapped category/subcategory`)
           continue

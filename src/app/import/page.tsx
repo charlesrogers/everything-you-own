@@ -190,7 +190,7 @@ export default function ImportPage() {
 
 function ImportContent() {
   const searchParams = useSearchParams()
-  const { householdId } = useAuth()
+  const { householdId, isLoading: authLoading } = useAuth()
   const store = useStore()
   // Restore token from localStorage on mount — avoids re-auth
   const [phase, setPhase] = useState<Phase>(() => {
@@ -282,13 +282,13 @@ function ImportContent() {
   const [activeTab, setActiveTab] = useState<"gmail" | "csv">("gmail")
 
   useEffect(() => {
-    if (!householdId) return
+    if (authLoading || !householdId) return
     async function init() {
-      await store.ensureDefaultCategories()
+      await store.ensureDefaultCategories().catch(() => {})
       const [cats, subs] = await Promise.all([
         store.getCategories(),
         store.getSubcategories(),
-      ])
+      ]).catch(() => [[], []] as [Category[], Subcategory[]])
       setCategories(cats)
       setSubcategories(subs)
 
@@ -305,7 +305,7 @@ function ImportContent() {
       } catch {}
     }
     init()
-  }, [store, householdId])
+  }, [store, householdId, authLoading])
 
   // Check for OAuth redirect callback
   useEffect(() => {
@@ -723,7 +723,7 @@ function ImportContent() {
           purchase_date: draft.purchase_date || undefined, ownership: draft.ownership,
           is_consumable: draft.is_consumable || undefined, source_url: draft.source_url || undefined,
           visibility: "shared", status: "purchased", currency: "USD", tags: draft.tags,
-        } as Parameters<typeof store.addProduct>[0])
+        })
         if (draft.location_id) {
           await store.addProductToLocation({ product_id: newProduct.id, location_id: draft.location_id }).catch(() => {})
           localStorage.setItem("eyo_last_bin_id", draft.location_id)
@@ -738,6 +738,11 @@ function ImportContent() {
 
     // Mark emails as imported (don't let this block)
     await store.markEmailsImported([...emailIds]).catch((e) => console.error("markEmailsImported failed:", e))
+
+    if (errors.length > 0) {
+      console.error(`Failed to save ${errors.length} products:`, errors)
+      alert(`Saved ${savedCount} products. ${errors.length} failed: ${errors.slice(0, 3).join(", ")}${errors.length > 3 ? "..." : ""}`)
+    }
     setSaving(false)
 
     const logEntries = [

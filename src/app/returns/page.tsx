@@ -72,7 +72,7 @@ export default function ReturnsPage() {
                 : daysLeft <= 7
                   ? "bg-amber-50 dark:bg-amber-950/30"
                   : "bg-emerald-50 dark:bg-emerald-950/30"
-            const category = categories.get(product.category_id)
+            const category = product.category_id ? categories.get(product.category_id) : undefined
 
             return (
               <Link

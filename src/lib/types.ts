@@ -16,8 +16,8 @@ export interface Product {
   id: string
   name: string
   brand?: string
-  category_id: string
-  subcategory_id: string
+  category_id?: string
+  subcategory_id?: string
   description?: string
   image_url?: string
   additional_images?: string[]

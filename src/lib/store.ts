@@ -354,7 +354,7 @@ export function clearAllData() {
 export function getProductCountsByCategory(): Record<string, number> {
   const counts: Record<string, number> = {}
   for (const p of getProducts()) {
-    counts[p.category_id] = (counts[p.category_id] || 0) + 1
+    if (p.category_id) counts[p.category_id] = (counts[p.category_id] || 0) + 1
   }
   return counts
 }
@@ -362,7 +362,7 @@ export function getProductCountsByCategory(): Record<string, number> {
 export function getProductCountsBySubcategory(): Record<string, number> {
   const counts: Record<string, number> = {}
   for (const p of getProducts()) {
-    counts[p.subcategory_id] = (counts[p.subcategory_id] || 0) + 1
+    if (p.subcategory_id) counts[p.subcategory_id] = (counts[p.subcategory_id] || 0) + 1
   }
   return counts
 }
@@ -420,8 +420,9 @@ export function getSpendingByCategory(): CategorySpending[] {
 
   const grouped: Record<string, Product[]> = {}
   for (const p of products) {
-    if (!grouped[p.category_id]) grouped[p.category_id] = []
-    grouped[p.category_id].push(p)
+    const cid = p.category_id ?? "uncategorized"
+    if (!grouped[cid]) grouped[cid] = []
+    grouped[cid].push(p)
   }
 
   return Object.entries(grouped)

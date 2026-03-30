@@ -211,8 +211,8 @@ export default function ProductsPage() {
             <ProductCard
               key={product.id}
               product={product}
-              category={catMap.get(product.category_id)}
-              subcategory={subMap.get(product.subcategory_id)}
+              category={product.category_id ? catMap.get(product.category_id) : undefined}
+              subcategory={product.subcategory_id ? subMap.get(product.subcategory_id) : undefined}
             />
           ))}
         </div>
@@ -233,8 +233,8 @@ export default function ProductsPage() {
                 <ProductRow
                   key={product.id}
                   product={product}
-                  category={catMap.get(product.category_id)}
-                  subcategory={subMap.get(product.subcategory_id)}
+                  category={product.category_id ? catMap.get(product.category_id) : undefined}
+                  subcategory={product.subcategory_id ? subMap.get(product.subcategory_id) : undefined}
                 />
               ))}
             </TableBody>

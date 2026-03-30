@@ -187,8 +187,8 @@ export default function DashboardPage() {
                 {locationFilter === "unplaced" ? "All products have been placed in storage!" : "No products yet."}
               </div>
             ) : displayProducts.map((product) => {
-              const cat = catMap.get(product.category_id)
-              const sub = subMap.get(product.subcategory_id)
+              const cat = product.category_id ? catMap.get(product.category_id) : undefined
+              const sub = product.subcategory_id ? subMap.get(product.subcategory_id) : undefined
               const isPlaced = placedProductIds.has(product.id)
               return (
                 <Link

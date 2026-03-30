@@ -536,8 +536,9 @@ export async function getSpendingByCategory(sb: Client, householdId: string): Pr
   const catMap = new Map(categories.map((c) => [c.id, c]))
   const grouped: Record<string, Product[]> = {}
   for (const p of products) {
-    if (!grouped[p.category_id]) grouped[p.category_id] = []
-    grouped[p.category_id].push(p)
+    const cid = p.category_id ?? "uncategorized"
+    if (!grouped[cid]) grouped[cid] = []
+    grouped[cid].push(p)
   }
 
   return Object.entries(grouped)
@@ -677,7 +678,7 @@ export async function getProductCountsByCategory(sb: Client, householdId: string
   const products = await getProducts(sb, householdId)
   const counts: Record<string, number> = {}
   for (const p of products) {
-    counts[p.category_id] = (counts[p.category_id] || 0) + 1
+    if (p.category_id) counts[p.category_id] = (counts[p.category_id] || 0) + 1
   }
   return counts
 }
@@ -686,7 +687,7 @@ export async function getProductCountsBySubcategory(sb: Client, householdId: str
   const products = await getProducts(sb, householdId)
   const counts: Record<string, number> = {}
   for (const p of products) {
-    counts[p.subcategory_id] = (counts[p.subcategory_id] || 0) + 1
+    if (p.subcategory_id) counts[p.subcategory_id] = (counts[p.subcategory_id] || 0) + 1
   }
   return counts
 }
