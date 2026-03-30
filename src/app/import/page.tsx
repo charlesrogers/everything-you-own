@@ -368,6 +368,7 @@ function ImportContent() {
   // --- Phase 1: Connect ---
 
   const handleConnect = () => {
+    localStorage.removeItem("gmail_token") // clear stale token
     const authUrl = getGmailAuthUrl()
     window.location.href = authUrl
   }
@@ -1129,6 +1130,13 @@ function ImportContent() {
               >
                 Process {selectedCount}
               </button>
+              <button
+                onClick={handleConnect}
+                className="text-[12px] text-muted-foreground hover:text-foreground hover:underline ml-2"
+                title="Re-authenticate with Gmail"
+              >
+                Reconnect
+              </button>
             </div>
           </div>
 
@@ -1140,7 +1148,13 @@ function ImportContent() {
           ) : emails.length === 0 && !loadingMore ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Mail className="size-10 text-muted-foreground/30 mb-3" />
-              <p className="text-[13px] text-muted-foreground">No receipt emails found in this timeframe.</p>
+              <p className="text-[13px] text-muted-foreground">No emails loaded. Your Gmail session may have expired.</p>
+              <button
+                onClick={handleConnect}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Reconnect Gmail
+              </button>
             </div>
           ) : (
             <>
