@@ -681,7 +681,10 @@ function ImportContent() {
     ))
   }
 
+  const [saving, setSaving] = useState(false)
+
   const handleSave = async () => {
+    setSaving(true)
     const toSave = drafts.filter((d) => d.included)
     const emailIds = new Set<string>()
     let savedCount = 0
@@ -689,26 +692,16 @@ function ImportContent() {
 
     for (const draft of toSave) {
       try {
-        // Skip exact duplicates
-        const dupes = await store.checkDuplicates({
-          name: draft.name,
-          brand: draft.brand || undefined,
-        }).catch(() => ({ exact: [], fuzzy: [] }))
-
-        if (dupes.exact.length > 0) {
-          emailIds.add(draft.emailId)
-          continue
-        }
-
         const newProduct = await store.addProduct({
           name: draft.name, brand: draft.brand || undefined,
-          category_id: draft.category_id, subcategory_id: draft.subcategory_id || "",
+          category_id: draft.category_id || undefined,
+          subcategory_id: draft.subcategory_id || undefined,
           price: draft.price ? parseFloat(draft.price) : undefined,
           retailer: draft.retailer || undefined, order_id: draft.order_id || undefined,
           purchase_date: draft.purchase_date || undefined, ownership: draft.ownership,
           is_consumable: draft.is_consumable || undefined, source_url: draft.source_url || undefined,
           visibility: "shared", status: "purchased", currency: "USD", tags: draft.tags,
-        })
+        } as Parameters<typeof store.addProduct>[0])
         if (draft.location_id) {
           await store.addProductToLocation({ product_id: newProduct.id, location_id: draft.location_id }).catch(() => {})
           localStorage.setItem("eyo_last_bin_id", draft.location_id)
@@ -721,8 +714,9 @@ function ImportContent() {
       }
     }
 
-    // Mark emails as imported (don't let this block the save)
-    await store.markEmailsImported([...emailIds]).catch(() => {})
+    // Mark emails as imported (don't let this block)
+    await store.markEmailsImported([...emailIds]).catch((e) => console.error("markEmailsImported failed:", e))
+    setSaving(false)
 
     const logEntries = [
       ...toSave.map((d) => ({ gmail_message_id: d.emailId, email_subject: d.name, email_from: d.retailer, email_date: d.purchase_date, status: "imported" as const, products_extracted: 1 })),
@@ -1535,24 +1529,22 @@ function ImportContent() {
                   <div className="flex gap-2">
                     {/* Save & Next = primary CTA when more pages exist */}
                     {pages.some((p, i) => i > currentPage && (p.status === "ready" || p.status === "processing")) ? (
-                      <>
-                        <button
-                          onClick={handleSave}
-                          disabled={includedCount === 0}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
-                        >
-                          <Check className="size-3.5" />
-                          Save & Next Page →
-                        </button>
-                      </>
+                      <button
+                        onClick={handleSave}
+                        disabled={includedCount === 0 || saving}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
+                      >
+                        {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                        {saving ? "Saving..." : `Save & Next Page → (${includedCount})`}
+                      </button>
                     ) : (
                       <button
                         onClick={handleSave}
-                        disabled={includedCount === 0}
+                        disabled={includedCount === 0 || saving}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
                       >
-                        <Check className="size-3.5" />
-                        Save ({includedCount})
+                        {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                        {saving ? "Saving..." : `Save (${includedCount})`}
                       </button>
                     )}
                   </div>
