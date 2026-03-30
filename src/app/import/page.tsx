@@ -282,6 +282,7 @@ function ImportContent() {
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
   const [activeTab, setActiveTab] = useState<"gmail" | "csv">("gmail")
+  const [importStats, setImportStats] = useState<{ totalProducts: number; earliest: string | null; latest: string | null; suggestedBefore: string | null } | null>(null)
 
   useEffect(() => {
     if (authLoading || !householdId) return
@@ -304,6 +305,29 @@ function ImportContent() {
         // Also keep bins-only list for backward compat
         const bins = opts.filter((l) => l.subtype === "bin").map((l) => ({ id: l.id, name: l.name, path: l.path }))
         setImportLocations(bins)
+      } catch {}
+
+      // Fetch import stats — what date range has been imported
+      try {
+        const products = await store.getProducts()
+        const withDates = products.filter((p: { purchase_date?: string }) => p.purchase_date)
+        const dates = withDates.map((p: { purchase_date?: string }) => p.purchase_date!).sort()
+        const formatD = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        const earliest = dates.length > 0 ? dates[0] : null
+        const latest = dates.length > 0 ? dates[dates.length - 1] : null
+        // Suggested "before" date = day before earliest imported product
+        let suggestedBefore: string | null = null
+        if (earliest) {
+          const d = new Date(earliest)
+          d.setDate(d.getDate() - 1)
+          suggestedBefore = d.toISOString().split("T")[0]
+        }
+        setImportStats({
+          totalProducts: products.length,
+          earliest: earliest ? formatD(earliest) : null,
+          latest: latest ? formatD(latest) : null,
+          suggestedBefore,
+        })
       } catch {}
     }
     init()
@@ -920,93 +944,71 @@ function ImportContent() {
         </div>
       )}
 
-      {/* Resume session banner */}
+      {/* Import history banner — shows what's been imported and what date range to continue from */}
+      {phase === "select" && importStats && (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
+          <div className="text-[13px] font-medium">Import History</div>
+          <div className="text-[12px] text-muted-foreground space-y-1">
+            <div>
+              <span className="text-foreground font-medium">{importStats.totalProducts} products</span> imported so far
+              {importStats.earliest && importStats.latest && (
+                <span> — from {importStats.earliest} to {importStats.latest}</span>
+              )}
+            </div>
+            {importStats.earliest && (
+              <div className="text-foreground font-medium">
+                To import older purchases, use Custom range ending before {importStats.earliest}
+              </div>
+            )}
+          </div>
+          {importStats.suggestedBefore && (
+            <button
+              onClick={() => {
+                setCustomAfter("2015-01-01")
+                setCustomBefore(importStats.suggestedBefore!)
+                setTimeframe("custom")
+              }}
+              className="rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Import before {importStats.earliest}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Resume unsaved pages */}
       {phase !== "review" && (() => {
         try {
           const raw = localStorage.getItem(SESSION_KEY)
           if (!raw) return null
           const session = JSON.parse(raw)
           const allPages = session.pages as BatchPage[]
+          const readyPages = allPages.filter((p) => p.status === "ready" && p.drafts?.length > 0)
+          if (readyPages.length === 0) { localStorage.removeItem(SESSION_KEY); return null }
           const age = Date.now() - session.timestamp
           if (age > 7 * 24 * 60 * 60 * 1000) { localStorage.removeItem(SESSION_KEY); return null }
 
-          const savedPages = allPages.filter((p) => p.status === "saved")
-          const readyPages = allPages.filter((p) => p.status === "ready" && p.drafts?.length > 0)
-          const unprocessedCount = allPages.filter((p) => p.status === "processing").length
-          const totalSaved = session.totalSaved ?? 0
-
-          if (savedPages.length === 0 && readyPages.length === 0) { localStorage.removeItem(SESSION_KEY); return null }
-
-          // Collect all dates we have
-          const allDates = allPages.flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
-          const processedDates = [...savedPages, ...readyPages].flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
-
-          const formatD = (d: string) => {
-            try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) }
-            catch { return d }
-          }
-
-          // Last processed date = the oldest date in saved/ready pages (they're sorted newest first by Gmail)
-          const lastProcessedDate = processedDates.length > 0 ? processedDates[0] : null
-          // Earliest unprocessed = the date range that still needs work
-          const unprocessedDates = allPages.filter((p) => p.status === "processing").flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
-          const earliestUnprocessed = unprocessedDates.length > 0 ? unprocessedDates[0] : null
-          const latestUnprocessed = unprocessedDates.length > 0 ? unprocessedDates[unprocessedDates.length - 1] : null
-
-          const sessionDate = new Date(session.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-
           return (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
-              <div className="text-[13px] font-medium text-amber-800">Last import: {sessionDate}</div>
-              <div className="text-[12px] text-amber-700 space-y-1">
-                <div>
-                  <span className="text-emerald-700 font-medium">{totalSaved} products saved</span>
-                  {processedDates.length > 0 && (
-                    <span> — emails from {formatD(processedDates[processedDates.length - 1])} to {formatD(processedDates[0])}</span>
-                  )}
-                </div>
-                {unprocessedCount > 0 && (
-                  <div className="font-medium text-amber-800">
-                    {earliestUnprocessed && latestUnprocessed ? (
-                      <>Still need to process: emails from {formatD(earliestUnprocessed)} to {formatD(latestUnprocessed)}</>
-                    ) : (
-                      <>{unprocessedCount * 20} emails were not processed — select a date range above and continue</>
-                    )}
-                  </div>
-                )}
-              </div>
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-center justify-between">
+              <span className="text-[13px] text-amber-700">
+                {readyPages.length} unsaved page{readyPages.length > 1 ? "s" : ""} from your last session ({readyPages.reduce((s, p) => s + p.drafts.length, 0)} products to review)
+              </span>
               <div className="flex gap-2">
-                {readyPages.length > 0 && (
-                  <button
-                    onClick={() => {
-                      const usable = allPages.filter((p) => p.status === "saved" || (p.status === "ready" && p.drafts?.length > 0))
-                      setPages(usable)
-                      setCurrentPage(usable.findIndex((p) => p.status === "ready"))
-                      setProcessingComplete(true)
-                      setPhase("review")
-                    }}
-                    className="rounded-lg bg-amber-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-amber-700"
-                  >
-                    Review {readyPages.length} unsaved page{readyPages.length > 1 ? "s" : ""}
-                  </button>
-                )}
-                {earliestUnprocessed && latestUnprocessed && (
-                  <button
-                    onClick={() => {
-                      // Pre-fill custom date range with unprocessed period
-                      setCustomAfter(earliestUnprocessed.split("T")[0] || earliestUnprocessed)
-                      setCustomBefore(latestUnprocessed.split("T")[0] || latestUnprocessed)
-                      setTimeframe("custom")
-                      localStorage.removeItem(SESSION_KEY)
-                    }}
-                    className="rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
-                  >
-                    Continue from {formatD(earliestUnprocessed)}
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    const usable = allPages.filter((p) => p.status === "saved" || (p.status === "ready" && p.drafts?.length > 0))
+                    setPages(usable)
+                    setCurrentPage(usable.findIndex((p) => p.status === "ready"))
+                    setProcessingComplete(true)
+                    setPhase("review")
+                  }}
+                  className="rounded-lg bg-amber-600 px-3 py-1 text-[12px] font-medium text-white hover:bg-amber-700"
+                >
+                  Resume
+                </button>
                 <button
                   onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.reload() }}
-                  className="rounded-lg border border-amber-500/30 px-3 py-1.5 text-[12px] font-medium text-amber-700 hover:bg-amber-500/10"
+                  className="text-[12px] text-amber-700 hover:underline"
                 >
                   Dismiss
                 </button>
