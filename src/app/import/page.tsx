@@ -603,8 +603,7 @@ function ImportContent() {
         if (data.products && Array.isArray(data.products)) {
           for (const product of data.products) {
             const { categoryId, subcategoryId } = mapCategoryGuess(product.category || null, product.subcategory || null)
-            const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
-            const duplicateWarning = dupes.exact.length > 0 ? `Exact match: ${dupes.exact[0].name}` : dupes.fuzzy.length > 0 ? `Similar: ${dupes.fuzzy[0].name}` : null
+            const duplicateWarning: string | null = null // dedup check moved to save time — was fetching all products per item
             const matchEmail = apiBatch.find(e => e.from.toLowerCase().includes((product.retailer || "").toLowerCase()) || e.subject.toLowerCase().includes((product.name || "").toLowerCase().slice(0, 20))) || apiBatch[0]
             batchDrafts.push({
               emailId: matchEmail.id, name: product.name || "", brand: product.brand || "",
@@ -612,7 +611,7 @@ function ImportContent() {
               order_id: product.order_id || "", purchase_date: product.purchase_date || "",
               category_id: categoryId, subcategory_id: subcategoryId, ownership: "mine",
               is_consumable: product.is_consumable || false, source_url: "",
-              included: !duplicateWarning?.startsWith("Exact"), duplicateWarning,
+              included: true, duplicateWarning,
               emailBody: matchEmail.bodyText, tags: [], location_id: bulkLocationId,
             })
           }
@@ -623,15 +622,14 @@ function ImportContent() {
           const result = parseReceiptEmail(email.body, email.subject, email.from, email.date)
           for (const product of result.products) {
             const { categoryId, subcategoryId } = mapCategoryGuess(product.category_guess)
-            const dupes = await store.checkDuplicates({ name: product.name, brand: product.brand || undefined })
-            const duplicateWarning = dupes.exact.length > 0 ? `Exact match: ${dupes.exact[0].name}` : dupes.fuzzy.length > 0 ? `Similar: ${dupes.fuzzy[0].name}` : null
+            const duplicateWarning: string | null = null // dedup check moved to save time — was fetching all products per item
             batchDrafts.push({
               emailId: email.id, name: product.name, brand: product.brand || "",
               price: product.price?.toString() || "", retailer: product.retailer,
               order_id: product.order_id || "", purchase_date: product.purchase_date || "",
               category_id: categoryId, subcategory_id: subcategoryId, ownership: "mine",
               is_consumable: product.is_consumable, source_url: product.source_url || "",
-              included: !duplicateWarning?.startsWith("Exact"), duplicateWarning,
+              included: true, duplicateWarning,
               emailBody: email.bodyText, tags: [], location_id: bulkLocationId,
             })
           }
