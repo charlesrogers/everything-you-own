@@ -263,6 +263,8 @@ function ImportContent() {
   interface BatchPage {
     pageNum: number
     emailRange: string
+    firstDate: string   // earliest email date in this page
+    lastDate: string    // latest email date in this page
     drafts: DraftProduct[]
     rejected: RejectedEmail[]
     status: "processing" | "ready" | "saved"
@@ -497,14 +499,20 @@ function ImportContent() {
     setSaved(false)
 
     const numBatches = Math.ceil(selected.length / BATCH_SIZE)
-    const initialPages: BatchPage[] = Array.from({ length: numBatches }, (_, i) => ({
-      pageNum: i,
-      emailRange: `${i * BATCH_SIZE + 1}–${Math.min((i + 1) * BATCH_SIZE, selected.length)}`,
-      drafts: [],
-      rejected: [],
-      status: "processing" as const,
-      savedCount: 0,
-    }))
+    const initialPages: BatchPage[] = Array.from({ length: numBatches }, (_, i) => {
+      const batch = selected.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE)
+      const dates = batch.map((e) => e.date).filter(Boolean).sort()
+      return {
+        pageNum: i,
+        emailRange: `${i * BATCH_SIZE + 1}–${Math.min((i + 1) * BATCH_SIZE, selected.length)}`,
+        firstDate: dates[0] || "",
+        lastDate: dates[dates.length - 1] || "",
+        drafts: [],
+        rejected: [],
+        status: "processing" as const,
+        savedCount: 0,
+      }
+    })
     setPages(initialPages)
     setCurrentPage(0)
 
@@ -631,13 +639,18 @@ function ImportContent() {
   useEffect(() => {
     if (pages.length > 0 && pages.some((p) => p.status !== "processing")) {
       try {
+        // Store all pages but strip heavy data:
+        // - saved pages: no drafts (already saved to DB)
+        // - ready pages: keep drafts (user needs to review)
+        // - processing pages: no drafts but keep date range (so user knows what's left)
+        const storablePages = pages.map((p) => ({
+          ...p,
+          drafts: p.status === "saved" ? [] : p.status === "processing" ? [] : p.drafts,
+          rejected: p.status === "processing" ? [] : p.rejected,
+        }))
         const session = {
-          pages: pages.map((p) => ({
-            ...p,
-            // Keep drafts for unsaved pages, clear for saved ones to save space
-            drafts: p.status === "saved" ? [] : p.drafts,
-          })),
-          currentPage,
+          pages: storablePages,
+          currentPage: Math.min(currentPage, storablePages.length - 1),
           totalSaved: pages.reduce((sum, p) => sum + p.savedCount, 0),
           timestamp: Date.now(),
         }
@@ -913,31 +926,66 @@ function ImportContent() {
           const raw = localStorage.getItem(SESSION_KEY)
           if (!raw) return null
           const session = JSON.parse(raw)
-          const savedPages = (session.pages as BatchPage[]).filter((p) => p.status === "saved").length
-          const totalPages = (session.pages as BatchPage[]).length
+          const allPages = session.pages as BatchPage[]
           const age = Date.now() - session.timestamp
-          if (age > 24 * 60 * 60 * 1000) { localStorage.removeItem(SESSION_KEY); return null } // expire after 24h
+          if (age > 7 * 24 * 60 * 60 * 1000) { localStorage.removeItem(SESSION_KEY); return null } // 7 day expiry
+
+          const savedPages = allPages.filter((p) => p.status === "saved")
+          const readyPages = allPages.filter((p) => p.status === "ready" && p.drafts?.length > 0)
+          const unprocessedPages = allPages.filter((p) => p.status === "processing")
+
+          // Figure out what date range was completed vs not
+          const savedDates = savedPages.flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
+          const unprocessedDates = unprocessedPages.flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
+
+          const formatD = (d: string) => { try { return new Date(d).toLocaleDateString("en-US", { month: "short", year: "numeric" }) } catch { return d } }
+
+          const savedRange = savedDates.length > 0 ? `${formatD(savedDates[savedDates.length - 1])} – ${formatD(savedDates[0])}` : ""
+          const unprocessedRange = unprocessedDates.length > 0 ? `${formatD(unprocessedDates[unprocessedDates.length - 1])} – ${formatD(unprocessedDates[0])}` : ""
+
+          if (savedPages.length === 0 && readyPages.length === 0) { localStorage.removeItem(SESSION_KEY); return null }
+
           return (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-center justify-between">
-              <span className="text-[13px] text-amber-700">
-                You have an unfinished import — {savedPages} of {totalPages} pages saved ({session.totalSaved} products)
-              </span>
-              <div className="flex gap-2">
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
+              <div className="text-[13px] font-medium text-amber-800">Unfinished import</div>
+              <div className="text-[12px] text-amber-700 space-y-1">
+                <div>Saved: {session.totalSaved ?? 0} products from {savedPages.length} pages
+                  {savedRange && <span className="text-amber-600"> ({savedRange})</span>}
+                </div>
+                {unprocessedPages.length > 0 && (
+                  <div>Not yet processed: {unprocessedPages.length} pages
+                    {unprocessedRange && <span className="text-amber-600"> ({unprocessedRange})</span>}
+                    {unprocessedDates.length > 0 && (
+                      <span className="text-amber-800 font-medium"> — select this date range to continue</span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 pt-1">
+                {readyPages.length > 0 && (
+                  <button
+                    onClick={() => {
+                      // Only restore pages with data
+                      const usable = allPages.filter((p) => p.status === "saved" || (p.status === "ready" && p.drafts?.length > 0))
+                      setPages(usable)
+                      const firstReady = usable.findIndex((p) => p.status === "ready")
+                      setCurrentPage(firstReady >= 0 ? firstReady : 0)
+                      setProcessingComplete(true)
+                      setPhase("review")
+                    }}
+                    className="rounded-lg bg-amber-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-amber-700"
+                  >
+                    Review {readyPages.length} unsaved page{readyPages.length > 1 ? "s" : ""}
+                  </button>
+                )}
                 <button
                   onClick={() => {
-                    setPages(session.pages)
-                    setCurrentPage(session.pages.findIndex((p: BatchPage) => p.status === "ready") ?? 0)
-                    setPhase("review")
+                    localStorage.removeItem(SESSION_KEY)
+                    window.location.reload()
                   }}
-                  className="rounded-lg bg-amber-600 px-3 py-1 text-[12px] font-medium text-white hover:bg-amber-700"
+                  className="rounded-lg border border-amber-500/30 px-3 py-1.5 text-[12px] font-medium text-amber-700 hover:bg-amber-500/10"
                 >
-                  Resume
-                </button>
-                <button
-                  onClick={() => localStorage.removeItem(SESSION_KEY)}
-                  className="rounded-lg border px-3 py-1 text-[12px] font-medium hover:bg-accent"
-                >
-                  Discard
+                  Clear & start fresh
                 </button>
               </div>
             </div>
