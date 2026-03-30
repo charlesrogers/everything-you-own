@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react"
 import Link from "next/link"
-import { Plus, LayoutGrid, List, Search } from "lucide-react"
+import { Plus, LayoutGrid, List, Search, GitMerge } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -85,12 +85,20 @@ export default function ProductsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-[20px] font-bold">Products</h1>
-        <Link href="/products/new">
-          <Button size="sm">
-            <Plus className="size-4" />
-            Add Product
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/products/dedupe">
+            <Button size="sm" variant="outline">
+              <GitMerge className="size-4" />
+              Find Duplicates
+            </Button>
+          </Link>
+          <Link href="/products/new">
+            <Button size="sm">
+              <Plus className="size-4" />
+              Add Product
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}

@@ -15,7 +15,7 @@ import type { GmailMessageMeta } from "@/lib/gmail"
 import { parseReceiptEmail, classifyEmail, htmlToText } from "@/lib/receipt-parser"
 import { useStore } from "@/hooks/use-store"
 import { useAuth } from "@/components/auth-provider"
-import type { Category, Subcategory, ProductOwnership } from "@/lib/types"
+import type { Category, Subcategory, ProductOwnership, Product } from "@/lib/types"
 import { OWNERSHIP_OPTIONS, EXPENSE_TAGS } from "@/lib/constants"
 import { CsvImport } from "./csv-import"
 import { SearchableLocationPicker, buildLocationOptions } from "@/components/searchable-location-picker"
@@ -286,6 +286,7 @@ function ImportContent() {
   const [allSavedCount, setAllSavedCount] = useState(0)
 
   const reviewRef = useRef<HTMLDivElement>(null)
+  const existingProductsRef = useRef<Product[]>([])
 
   // Scroll to top when page changes
   useEffect(() => {
@@ -531,6 +532,9 @@ function ImportContent() {
     const selected = emails.filter((e) => e.selected)
     if (selected.length === 0) return
 
+    // Fetch existing products once for dedup checks
+    existingProductsRef.current = await store.getProducts()
+
     setSelectedForProcessing(selected)
     setPhase("review")
     setProcessingComplete(false)
@@ -669,6 +673,25 @@ function ImportContent() {
       seen.add(key)
       return true
     })
+
+    // Check against existing products for duplicate warnings
+    const existing = existingProductsRef.current
+    for (const d of dedupedDrafts) {
+      const normName = d.name.toLowerCase().trim()
+      const match = existing.find((p) => {
+        // Same name (case-insensitive)
+        if (p.name.toLowerCase().trim() === normName) return true
+        // Same order_id + retailer (both non-empty)
+        if (d.order_id && p.order_id && d.retailer && p.retailer &&
+          d.order_id.trim().toLowerCase() === p.order_id.trim().toLowerCase() &&
+          d.retailer.trim().toLowerCase() === p.retailer.trim().toLowerCase()) return true
+        return false
+      })
+      if (match) {
+        d.duplicateWarning = `Possible duplicate of existing product: "${match.name}"`
+        d.included = false
+      }
+    }
 
     // Emails with 0 products → rejected
     const draftEmailIds = new Set(dedupedDrafts.map((d) => d.emailId))
