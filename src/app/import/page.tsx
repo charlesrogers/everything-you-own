@@ -938,7 +938,7 @@ function ImportContent() {
           const savedDates = savedPages.flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
           const unprocessedDates = unprocessedPages.flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
 
-          const formatD = (d: string) => { try { return new Date(d).toLocaleDateString("en-US", { month: "short", year: "numeric" }) } catch { return d } }
+          const formatD = (d: string) => { try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) } catch { return d } }
 
           const savedRange = savedDates.length > 0 ? `${formatD(savedDates[savedDates.length - 1])} – ${formatD(savedDates[0])}` : ""
           const unprocessedRange = unprocessedDates.length > 0 ? `${formatD(unprocessedDates[unprocessedDates.length - 1])} – ${formatD(unprocessedDates[0])}` : ""
