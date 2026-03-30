@@ -928,48 +928,60 @@ function ImportContent() {
           const session = JSON.parse(raw)
           const allPages = session.pages as BatchPage[]
           const age = Date.now() - session.timestamp
-          if (age > 7 * 24 * 60 * 60 * 1000) { localStorage.removeItem(SESSION_KEY); return null } // 7 day expiry
+          if (age > 7 * 24 * 60 * 60 * 1000) { localStorage.removeItem(SESSION_KEY); return null }
 
           const savedPages = allPages.filter((p) => p.status === "saved")
           const readyPages = allPages.filter((p) => p.status === "ready" && p.drafts?.length > 0)
-          const unprocessedPages = allPages.filter((p) => p.status === "processing")
-
-          // Figure out what date range was completed vs not
-          const savedDates = savedPages.flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
-          const unprocessedDates = unprocessedPages.flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
-
-          const formatD = (d: string) => { try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) } catch { return d } }
-
-          const savedRange = savedDates.length > 0 ? `${formatD(savedDates[savedDates.length - 1])} – ${formatD(savedDates[0])}` : ""
-          const unprocessedRange = unprocessedDates.length > 0 ? `${formatD(unprocessedDates[unprocessedDates.length - 1])} – ${formatD(unprocessedDates[0])}` : ""
+          const unprocessedCount = allPages.filter((p) => p.status === "processing").length
+          const totalSaved = session.totalSaved ?? 0
 
           if (savedPages.length === 0 && readyPages.length === 0) { localStorage.removeItem(SESSION_KEY); return null }
 
+          // Collect all dates we have
+          const allDates = allPages.flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
+          const processedDates = [...savedPages, ...readyPages].flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
+
+          const formatD = (d: string) => {
+            try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) }
+            catch { return d }
+          }
+
+          // Last processed date = the oldest date in saved/ready pages (they're sorted newest first by Gmail)
+          const lastProcessedDate = processedDates.length > 0 ? processedDates[0] : null
+          // Earliest unprocessed = the date range that still needs work
+          const unprocessedDates = allPages.filter((p) => p.status === "processing").flatMap((p) => [p.firstDate, p.lastDate]).filter(Boolean).sort()
+          const earliestUnprocessed = unprocessedDates.length > 0 ? unprocessedDates[0] : null
+          const latestUnprocessed = unprocessedDates.length > 0 ? unprocessedDates[unprocessedDates.length - 1] : null
+
+          const sessionDate = new Date(session.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+
           return (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
-              <div className="text-[13px] font-medium text-amber-800">Unfinished import</div>
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
+              <div className="text-[13px] font-medium text-amber-800">Last import: {sessionDate}</div>
               <div className="text-[12px] text-amber-700 space-y-1">
-                <div>Saved: {session.totalSaved ?? 0} products from {savedPages.length} pages
-                  {savedRange && <span className="text-amber-600"> ({savedRange})</span>}
+                <div>
+                  <span className="text-emerald-700 font-medium">{totalSaved} products saved</span>
+                  {processedDates.length > 0 && (
+                    <span> — emails from {formatD(processedDates[processedDates.length - 1])} to {formatD(processedDates[0])}</span>
+                  )}
                 </div>
-                {unprocessedPages.length > 0 && (
-                  <div>Not yet processed: {unprocessedPages.length} pages
-                    {unprocessedRange && <span className="text-amber-600"> ({unprocessedRange})</span>}
-                    {unprocessedDates.length > 0 && (
-                      <span className="text-amber-800 font-medium"> — select this date range to continue</span>
+                {unprocessedCount > 0 && (
+                  <div className="font-medium text-amber-800">
+                    {earliestUnprocessed && latestUnprocessed ? (
+                      <>Still need to process: emails from {formatD(earliestUnprocessed)} to {formatD(latestUnprocessed)}</>
+                    ) : (
+                      <>{unprocessedCount * 20} emails were not processed — select a date range above and continue</>
                     )}
                   </div>
                 )}
               </div>
-              <div className="flex gap-2 pt-1">
+              <div className="flex gap-2">
                 {readyPages.length > 0 && (
                   <button
                     onClick={() => {
-                      // Only restore pages with data
                       const usable = allPages.filter((p) => p.status === "saved" || (p.status === "ready" && p.drafts?.length > 0))
                       setPages(usable)
-                      const firstReady = usable.findIndex((p) => p.status === "ready")
-                      setCurrentPage(firstReady >= 0 ? firstReady : 0)
+                      setCurrentPage(usable.findIndex((p) => p.status === "ready"))
                       setProcessingComplete(true)
                       setPhase("review")
                     }}
@@ -978,14 +990,25 @@ function ImportContent() {
                     Review {readyPages.length} unsaved page{readyPages.length > 1 ? "s" : ""}
                   </button>
                 )}
+                {earliestUnprocessed && latestUnprocessed && (
+                  <button
+                    onClick={() => {
+                      // Pre-fill custom date range with unprocessed period
+                      setCustomAfter(earliestUnprocessed.split("T")[0] || earliestUnprocessed)
+                      setCustomBefore(latestUnprocessed.split("T")[0] || latestUnprocessed)
+                      setTimeframe("custom")
+                      localStorage.removeItem(SESSION_KEY)
+                    }}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    Continue from {formatD(earliestUnprocessed)}
+                  </button>
+                )}
                 <button
-                  onClick={() => {
-                    localStorage.removeItem(SESSION_KEY)
-                    window.location.reload()
-                  }}
+                  onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.reload() }}
                   className="rounded-lg border border-amber-500/30 px-3 py-1.5 text-[12px] font-medium text-amber-700 hover:bg-amber-500/10"
                 >
-                  Clear & start fresh
+                  Dismiss
                 </button>
               </div>
             </div>
