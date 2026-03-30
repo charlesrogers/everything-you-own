@@ -20,6 +20,7 @@ export default function StoragePage() {
   const [tree, setTree] = useState<LocationTreeNode[]>([])
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
+  const [allBinTpls, setAllBinTpls] = useState<Array<{ id: string; name: string; brand: string | null; widthIn: number | null; depthIn: number | null; heightIn: number | null }>>([])
   const [tab, setTab] = useState<Tab>("tree")
   const [tagFilter, setTagFilter] = useState<"all" | "untagged" | "tagged">("untagged")
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -57,6 +58,12 @@ export default function StoragePage() {
       })
       .catch((err) => console.error("Failed to load storage:", err))
       .finally(() => setLoading(false))
+    // Load bin templates from DB
+    store.getLocationTemplates()
+      .then((tpls) => setAllBinTpls(tpls.filter((t) => t.category === "bin").map((t) => ({
+        id: t.id, name: t.name, brand: t.brand, widthIn: t.width_in, depthIn: t.depth_in, heightIn: t.height_in,
+      }))))
+      .catch(() => {})
   }, [authLoading, householdId])
 
   const handleDelete = async (id: string) => {
@@ -131,7 +138,8 @@ export default function StoragePage() {
       if (!parentId) {
         parentId = await getOrCreateUnsortedZone()
       }
-      const template = SAMLA_BINS.find((b) => b.id === addBinTemplate)
+      const tpl = allBinTpls.find((b) => b.id === addBinTemplate) || SAMLA_BINS.find((b) => b.id === addBinTemplate)
+      const template = tpl ? { widthIn: tpl.widthIn ?? 0, depthIn: tpl.depthIn ?? 0, heightIn: tpl.heightIn ?? 0 } : null
       await store.createLocation({
         parent_id: parentId,
         location_type: "compartment",
@@ -498,8 +506,8 @@ export default function StoragePage() {
                     className="w-full rounded-lg border bg-background px-3 py-2 text-[13px]"
                   >
                     <option value="">Bin type (optional)</option>
-                    {SAMLA_BINS.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name} ({b.widthIn}&quot; &times; {b.depthIn}&quot; &times; {b.heightIn}&quot;)</option>
+                    {(allBinTpls.length > 0 ? allBinTpls : SAMLA_BINS.map((b) => ({ id: b.id, name: b.name, brand: null, widthIn: b.widthIn, depthIn: b.depthIn, heightIn: b.heightIn }))).map((b) => (
+                      <option key={b.id} value={b.id}>{b.brand ? `${b.brand} — ` : ""}{b.name}{b.widthIn ? ` (${b.widthIn}" × ${b.depthIn}" × ${b.heightIn}")` : ""}</option>
                     ))}
                   </select>
                   <input
@@ -715,8 +723,8 @@ export default function StoragePage() {
                               className="rounded border bg-background px-2 py-1 text-[11px] w-28"
                             >
                               <option value="">Type</option>
-                              {SAMLA_BINS.map((b) => (
-                                <option key={b.id} value={b.id}>{b.name}</option>
+                              {(allBinTpls.length > 0 ? allBinTpls : SAMLA_BINS.map((b) => ({ id: b.id, name: b.name, brand: null, widthIn: b.widthIn, depthIn: b.depthIn, heightIn: b.heightIn }))).map((b) => (
+                                <option key={b.id} value={b.id}>{b.brand ? `${b.brand} — ` : ""}{b.name}</option>
                               ))}
                             </select>
                             <input
