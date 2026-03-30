@@ -26,6 +26,7 @@ function buildSystemPrompt(categories?: CategoryInput[]): string {
   return `You are a receipt parser. Given email receipt text, extract every purchased product.
 
 Return a JSON array of objects. Each object must have these fields:
+- email_index: number (which email this product came from — 1-based, matching the EMAIL number in the input)
 - name: string (clean product name, no size/color suffixes unless they're part of the product identity)
 - brand: string | null (manufacturer/brand if identifiable)
 - price: number | null (unit price in USD, not total for quantity)
@@ -42,7 +43,7 @@ Rules:
 - ONLY extract actual purchased products, NOT shipping fees, taxes, gift cards, discounts, subtotals, or summary lines
 - If you see "Qty: 2" or "x2", set quantity=2 and price=unit price
 - Clean up product names: remove excessive SKU numbers, but keep model numbers that identify the product
-- If multiple emails are provided, process each independently
+- If multiple emails are provided, process each independently. Use email_index to indicate which email each product belongs to.
 - Return ONLY the JSON array, no markdown, no explanation`
 }
 

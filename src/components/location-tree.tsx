@@ -63,7 +63,7 @@ interface LocationTreeItemProps {
 }
 
 function LocationTreeItem({ node, depth, itemCounts, onDelete, draggable, onDragStart, onDragOver, onDrop, dragOverId }: LocationTreeItemProps) {
-  const [expanded, setExpanded] = useState(depth < 2)
+  const [expanded, setExpanded] = useState(depth < 1)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const hasChildren = node.children.length > 0
   const Icon = getIcon(node)

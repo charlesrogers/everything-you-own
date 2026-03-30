@@ -28,8 +28,8 @@ export default function StoragePage() {
   const [expandedItems, setExpandedItems] = useState<Record<string, unknown>[]>([])
   const [loadingItems, setLoadingItems] = useState(false)
   // Search
-  type SearchType = "items" | "bins" | "shelves" | "locations"
-  const [searchType, setSearchType] = useState<SearchType>("items")
+  type SearchType = "all" | "items" | "bins" | "shelves" | "locations"
+  const [searchType, setSearchType] = useState<SearchType>("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<Record<string, unknown>[] | null>(null)
   const [searching, setSearching] = useState(false)
@@ -93,7 +93,20 @@ export default function StoragePage() {
     }
     const q = searchQuery.toLowerCase()
     const timeout = setTimeout(async () => {
-      if (searchType === "items") {
+      if (searchType === "all") {
+        // Search both items and locations
+        setSearching(true)
+        try {
+          const res = await fetch(`/api/storage?q=${encodeURIComponent(q)}&type=items`)
+          const data = await res.json()
+          const itemResults = (data.searchResults ?? []).map((r: Record<string, unknown>) => ({ ...r, _type: "item" }))
+          const locResults = locations
+            .filter((l) => l.name.toLowerCase().includes(q))
+            .map((l) => ({ ...l, _type: "location" }))
+          setSearchResults([...itemResults, ...locResults])
+        } catch { setSearchResults([]) }
+        setSearching(false)
+      } else if (searchType === "items") {
         // Server-side search for items with locations
         setSearching(true)
         try {
@@ -335,6 +348,7 @@ export default function StoragePage() {
             onChange={(e) => { setSearchType(e.target.value as SearchType); setSearchResults(null) }}
             className="rounded-lg border bg-background px-3 py-2 text-[13px] font-medium w-32 shrink-0"
           >
+            <option value="all">All</option>
             <option value="items">Items</option>
             <option value="bins">Bins</option>
             <option value="shelves">Shelves</option>
@@ -375,35 +389,34 @@ export default function StoragePage() {
             </div>
           ) : (
             <div className="divide-y">
-              {searchType === "items" ? (
-                // Item results with location paths
-                searchResults.map((item) => (
-                  <div key={String(item.id)} className="px-4 py-3 hover:bg-accent/50 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <Package className="size-4 text-muted-foreground shrink-0" />
-                      <span className="text-[13px] font-medium flex-1 truncate">{String(item.name)}</span>
-                      {item.brand ? <span className="text-[11px] text-muted-foreground">{String(item.brand)}</span> : null}
-                      {item.price != null && <span className="text-[12px] text-muted-foreground">${Number(item.price).toFixed(2)}</span>}
+              {searchResults.map((result) => {
+                const isItem = result._type === "item" || (searchType === "items" && !result._type)
+                if (isItem) {
+                  return (
+                    <div key={String(result.id)} className="px-4 py-3 hover:bg-accent/50 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <Package className="size-4 text-muted-foreground shrink-0" />
+                        <span className="text-[13px] font-medium flex-1 truncate">{String(result.name)}</span>
+                        {result.brand ? <span className="text-[11px] text-muted-foreground">{String(result.brand)}</span> : null}
+                        {result.price != null && <span className="text-[12px] text-muted-foreground">${Number(result.price).toFixed(2)}</span>}
+                      </div>
+                      {Array.isArray(result.locations) && (result.locations as {id: string; path: string}[]).map((loc) => (
+                        <Link
+                          key={loc.id}
+                          href={`/storage/${loc.id}`}
+                          className="flex items-center gap-1.5 mt-1 ml-6 text-[11px] text-muted-foreground hover:text-primary"
+                        >
+                          <MapPin className="size-3" />
+                          {loc.path}
+                        </Link>
+                      ))}
+                      {(!result.locations || (result.locations as unknown[]).length === 0) && (
+                        <span className="ml-6 text-[11px] text-muted-foreground/50">Not stored anywhere</span>
+                      )}
                     </div>
-                    {Array.isArray(item.locations) && (item.locations as {id: string; path: string}[]).map((loc) => (
-                      <Link
-                        key={loc.id}
-                        href={`/storage/${loc.id}`}
-                        className="flex items-center gap-1.5 mt-1 ml-6 text-[11px] text-muted-foreground hover:text-primary"
-                      >
-                        <MapPin className="size-3" />
-                        {loc.path}
-                      </Link>
-                    ))}
-                    {(!item.locations || (item.locations as unknown[]).length === 0) && (
-                      <span className="ml-6 text-[11px] text-muted-foreground/50">Not stored anywhere</span>
-                    )}
-                  </div>
-                ))
-              ) : (
-                // Location/Bin/Shelf results
-                searchResults.map((loc) => {
-                  const l = loc as unknown as Location
+                  )
+                } else {
+                  const l = result as unknown as Location
                   return (
                     <Link
                       key={l.id}
@@ -427,8 +440,8 @@ export default function StoragePage() {
                       {l.nfc_tag_id && <Nfc className="size-3 text-emerald-500" />}
                     </Link>
                   )
-                })
-              )}
+                }
+              })}
             </div>
           )}
         </div>

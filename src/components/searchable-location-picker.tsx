@@ -56,9 +56,23 @@ export function SearchableLocationPicker({
     return () => document.removeEventListener("mousedown", handleClick)
   }, [])
 
-  const filtered = query.trim()
-    ? locations.filter((l) => l.name.toLowerCase().includes(query.toLowerCase()) || l.path.toLowerCase().includes(query.toLowerCase()))
-    : locations
+  const lastUsedId = typeof window !== "undefined" ? localStorage.getItem("eyo_last_bin_id") : null
+
+  const filtered = (() => {
+    const base = query.trim()
+      ? locations.filter((l) => l.name.toLowerCase().includes(query.toLowerCase()) || l.path.toLowerCase().includes(query.toLowerCase()))
+      : locations
+    // Put last-used location at the top
+    if (lastUsedId && !query.trim()) {
+      const idx = base.findIndex((l) => l.id === lastUsedId)
+      if (idx > 0) {
+        const copy = [...base]
+        const [item] = copy.splice(idx, 1)
+        return [item, ...copy]
+      }
+    }
+    return base
+  })()
 
   return (
     <div ref={ref} className={`relative ${className}`}>
@@ -184,19 +198,20 @@ export function SearchableLocationPicker({
             {filtered.map((loc) => {
               const Icon = getIcon(loc.type, loc.subtype)
               const isSelected = value === loc.id
+              const isSearching = !!query.trim()
               return (
                 <button
                   key={loc.id}
                   type="button"
                   onClick={() => { onChange(loc.id); setQuery(""); setOpen(false) }}
                   className={`w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-accent transition-colors ${isSelected ? "bg-primary/5" : ""}`}
-                  style={{ paddingLeft: `${12 + loc.depth * 12}px` }}
+                  style={{ paddingLeft: isSearching ? "12px" : `${12 + loc.depth * 12}px` }}
                 >
                   <Icon className={`size-3 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
                   <span className={`text-[12px] truncate ${isSelected ? "text-primary font-medium" : ""}`}>
-                    {loc.name}
+                    {isSearching ? loc.path : loc.name}
                   </span>
-                  {loc.subtype && (
+                  {!isSearching && loc.subtype && (
                     <span className="text-[9px] text-muted-foreground/50 shrink-0">
                       {loc.subtype}
                     </span>

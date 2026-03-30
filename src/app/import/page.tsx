@@ -49,6 +49,7 @@ interface DraftProduct {
   ownership: ProductOwnership
   is_consumable: boolean
   source_url: string
+  quantity: number
   included: boolean
   duplicateWarning: string | null
   emailBody: string
@@ -277,6 +278,13 @@ function ImportContent() {
   const [totalEmailsProcessed, setTotalEmailsProcessed] = useState(0)
   const [selectedForProcessing, setSelectedForProcessing] = useState<EmailEntry[]>([])
   const [allSavedCount, setAllSavedCount] = useState(0)
+
+  const reviewRef = useRef<HTMLDivElement>(null)
+
+  // Scroll to top when page changes
+  useEffect(() => {
+    reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [currentPage])
 
   // Shared
   const [categories, setCategories] = useState<Category[]>([])
@@ -605,14 +613,16 @@ function ImportContent() {
           for (const product of data.products) {
             const { categoryId, subcategoryId } = mapCategoryGuess(product.category || null, product.subcategory || null)
             const duplicateWarning: string | null = null // dedup check moved to save time — was fetching all products per item
-            const matchEmail = apiBatch.find(e => e.from.toLowerCase().includes((product.retailer || "").toLowerCase()) || e.subject.toLowerCase().includes((product.name || "").toLowerCase().slice(0, 20))) || apiBatch[0]
+            // Use email_index from Claude API (1-based) to match product to source email
+            const emailIdx = typeof product.email_index === "number" ? product.email_index - 1 : -1
+            const matchEmail = (emailIdx >= 0 && emailIdx < apiBatch.length) ? apiBatch[emailIdx] : apiBatch[0]
             batchDrafts.push({
               emailId: matchEmail.id, name: product.name || "", brand: product.brand || "",
               price: product.price?.toString() || "", retailer: product.retailer || "",
               order_id: product.order_id || "", purchase_date: product.purchase_date || "",
               category_id: categoryId, subcategory_id: subcategoryId, ownership: "mine",
               is_consumable: product.is_consumable || false, source_url: "",
-              included: true, duplicateWarning,
+              quantity: product.quantity || 1, included: true, duplicateWarning,
               emailBody: matchEmail.bodyText, tags: [], location_id: bulkLocationId,
             })
           }
@@ -630,11 +640,18 @@ function ImportContent() {
               order_id: product.order_id || "", purchase_date: product.purchase_date || "",
               category_id: categoryId, subcategory_id: subcategoryId, ownership: "mine",
               is_consumable: product.is_consumable, source_url: product.source_url || "",
-              included: true, duplicateWarning,
+              quantity: product.quantity || 1, included: true, duplicateWarning,
               emailBody: email.bodyText, tags: [], location_id: bulkLocationId,
             })
           }
         }
+      }
+    }
+
+    // Mark excluded vendor products as not included
+    for (const d of batchDrafts) {
+      if (isVendorExcluded(d.retailer)) {
+        d.included = false
       }
     }
 
@@ -698,7 +715,7 @@ function ImportContent() {
     ))
   }
 
-  const updateDraft = (index: number, field: keyof DraftProduct, value: string | boolean | string[]) => {
+  const updateDraft = (index: number, field: keyof DraftProduct, value: string | boolean | string[] | number) => {
     setPages((prev) => prev.map((p, pi) =>
       pi === currentPage ? { ...p, drafts: p.drafts.map((d, i) => i === index ? { ...d, [field]: value } : d) } : p
     ))
@@ -761,7 +778,7 @@ function ImportContent() {
           visibility: "shared", status: "purchased", currency: "USD", tags: draft.tags,
         })
         if (draft.location_id) {
-          await store.addProductToLocation({ product_id: newProduct.id, location_id: draft.location_id }).catch(() => {})
+          await store.addProductToLocation({ product_id: newProduct.id, location_id: draft.location_id, quantity: draft.quantity || 1 }).catch(() => {})
           localStorage.setItem("eyo_last_bin_id", draft.location_id)
         }
         emailIds.add(draft.emailId)
@@ -1270,7 +1287,7 @@ function ImportContent() {
 
       {/* Phase 3: Review & Save */}
       {phase === "review" && (
-        <div className="space-y-4">
+        <div ref={reviewRef} className="space-y-4">
           {/* Global progress bar */}
           {!processingComplete && pages.length > 0 && (
             <div className="rounded-lg border bg-secondary/30 p-3">
@@ -1325,24 +1342,33 @@ function ImportContent() {
               <h2 className="text-[15px] font-semibold mb-2">
                 {totalSaved} product{totalSaved !== 1 ? "s" : ""} imported from {pages.length} pages
               </h2>
-              <div className="flex gap-3 mt-4">
-                <Link
-                  href="/products"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-                >
-                  <Package className="size-3.5" />
-                  View Products
-                </Link>
+              <div className="flex flex-wrap gap-3 mt-4 justify-center">
                 <button
                   onClick={() => {
                     setSaved(false)
                     setDrafts([])
+                    setPages([])
                     setPhase("select")
                   }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <Mail className="size-3.5" />
+                  Import New Date Range
+                </button>
+                <Link
+                  href="/products"
                   className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-[13px] font-medium hover:bg-accent transition-colors"
                 >
-                  Import More
-                </button>
+                  <Package className="size-3.5" />
+                  View All Products
+                </Link>
+                <Link
+                  href="/dashboard?filter=unplaced"
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-[13px] font-medium hover:bg-accent transition-colors"
+                >
+                  <Upload className="size-3.5" />
+                  See Unsorted Products
+                </Link>
               </div>
             </div>
           ) : currentPageData?.status === "processing" ? (
@@ -1482,6 +1508,16 @@ function ImportContent() {
                           step="0.01"
                           value={draft.price}
                           onChange={(e) => updateDraft(i, "price", e.target.value)}
+                          className="w-full rounded-lg border bg-background px-3 py-1.5 text-[13px]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-muted-foreground">Qty</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={draft.quantity}
+                          onChange={(e) => updateDraft(i, "quantity", parseInt(e.target.value) || 1)}
                           className="w-full rounded-lg border bg-background px-3 py-1.5 text-[13px]"
                         />
                       </div>
@@ -1645,20 +1681,20 @@ function ImportContent() {
                     {pages.some((p, i) => i > currentPage && (p.status === "ready" || p.status === "processing")) ? (
                       <button
                         onClick={handleSave}
-                        disabled={includedCount === 0 || saving}
+                        disabled={saving}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
                       >
                         {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                        {saving ? "Saving..." : `Save & Next Page → (${includedCount})`}
+                        {saving ? "Saving..." : includedCount > 0 ? `Save & Next Page → (${includedCount})` : "Skip → Next Page"}
                       </button>
                     ) : (
                       <button
                         onClick={handleSave}
-                        disabled={includedCount === 0 || saving}
+                        disabled={saving}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors active:translate-y-px disabled:opacity-50"
                       >
                         {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                        {saving ? "Saving..." : `Save (${includedCount})`}
+                        {saving ? "Saving..." : includedCount > 0 ? `Save (${includedCount})` : "Finish"}
                       </button>
                     )}
                   </div>
@@ -1717,6 +1753,7 @@ function ImportContent() {
                                 ownership: "mine",
                                 is_consumable: false,
                                 source_url: "",
+                                quantity: p.quantity || 1,
                                 included: true,
                                 duplicateWarning: null,
                                 emailBody: rej.bodyText,
@@ -1751,6 +1788,7 @@ function ImportContent() {
                               ownership: "mine",
                               is_consumable: false,
                               source_url: "",
+                              quantity: 1,
                               included: true,
                               duplicateWarning: null,
                               emailBody: rej.bodyText,

@@ -12,7 +12,7 @@ export const LOCATION_TYPE_CONFIG: Record<LocationType, {
     label: 'Room',
     icon: 'DoorOpen',
     canHoldItems: true,
-    allowedChildren: ['zone', 'unit', 'compartment'],
+    allowedChildren: ['room', 'zone', 'unit', 'compartment'],
   },
   zone: {
     label: 'Zone / Area',

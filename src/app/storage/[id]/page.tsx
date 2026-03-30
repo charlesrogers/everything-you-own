@@ -55,7 +55,6 @@ export default function LocationDetailPage() {
   const [binTemplates, setBinTemplates] = useState<import("@/lib/wms-types").LocationTemplate[]>([])
   const [shelfItemsByPosition, setShelfItemsByPosition] = useState<Record<string, { front: Record<string, number>; back: Record<string, number> }>>({})
   const [loading, setLoading] = useState(true)
-  const [binTemplates, setBinTemplates] = useState<import("@/lib/wms-types").LocationTemplate[]>([])
   const [showAddChild, setShowAddChild] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [editingDetails, setEditingDetails] = useState(false)
