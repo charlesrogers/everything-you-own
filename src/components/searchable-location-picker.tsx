@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Search, X, MapPin, Package, Minus, Server, DoorOpen } from "lucide-react"
+import { Search, X, MapPin, Package, Minus, Server, DoorOpen, Plus } from "lucide-react"
 
 interface LocationOption {
   id: string
@@ -16,6 +16,7 @@ interface SearchableLocationPickerProps {
   locations: LocationOption[]
   value: string
   onChange: (id: string) => void
+  onCreateBin?: (name: string, parentId: string) => Promise<string | void>
   placeholder?: string
   className?: string
 }
@@ -32,11 +33,16 @@ export function SearchableLocationPicker({
   locations,
   value,
   onChange,
+  onCreateBin,
   placeholder = "Search locations...",
   className = "",
 }: SearchableLocationPickerProps) {
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newBinName, setNewBinName] = useState("")
+  const [newBinParent, setNewBinParent] = useState("")
+  const [creating, setCreating] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   const selected = locations.find((l) => l.id === value)
@@ -106,6 +112,68 @@ export function SearchableLocationPicker({
             >
               No location (unsorted)
             </button>
+
+            {/* Create new bin */}
+            {onCreateBin && !showCreate && (
+              <button
+                type="button"
+                onClick={() => setShowCreate(true)}
+                className="w-full flex items-center gap-1.5 px-3 py-2 text-left text-[12px] text-primary hover:bg-accent transition-colors border-b"
+              >
+                <Plus className="size-3" />
+                Create new bin
+              </button>
+            )}
+            {onCreateBin && showCreate && (
+              <div className="px-3 py-2 space-y-2 border-b bg-accent/30">
+                <input
+                  type="text"
+                  value={newBinName}
+                  onChange={(e) => setNewBinName(e.target.value)}
+                  placeholder="Bin name (e.g., Power Tools)"
+                  className="w-full rounded border bg-background px-2 py-1 text-[12px]"
+                  autoFocus
+                />
+                <select
+                  value={newBinParent}
+                  onChange={(e) => setNewBinParent(e.target.value)}
+                  className="w-full rounded border bg-background px-2 py-1 text-[12px]"
+                >
+                  <option value="">Select parent shelf...</option>
+                  {locations.filter((l) => l.subtype === "shelf" || l.subtype === "drawer").map((l) => (
+                    <option key={l.id} value={l.id}>{l.path}</option>
+                  ))}
+                </select>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    disabled={!newBinName.trim() || !newBinParent || creating}
+                    onClick={async () => {
+                      setCreating(true)
+                      const id = await onCreateBin(newBinName.trim(), newBinParent)
+                      if (id) {
+                        onChange(id as string)
+                        setOpen(false)
+                      }
+                      setShowCreate(false)
+                      setNewBinName("")
+                      setNewBinParent("")
+                      setCreating(false)
+                    }}
+                    className="rounded bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-50"
+                  >
+                    {creating ? "Creating..." : "Create"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowCreate(false); setNewBinName(""); setNewBinParent("") }}
+                    className="rounded border px-2 py-1 text-[11px] font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
 
             {filtered.length === 0 && query.trim() && (
               <div className="px-3 py-4 text-[12px] text-muted-foreground text-center">

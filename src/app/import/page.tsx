@@ -683,6 +683,28 @@ function ImportContent() {
 
   const [saving, setSaving] = useState(false)
 
+  const handleCreateBin = async (name: string, parentId: string): Promise<string | void> => {
+    try {
+      const loc = await store.createLocation({
+        parent_id: parentId,
+        location_type: "compartment",
+        unit_subtype: "bin",
+        name,
+      })
+      // Refresh location options
+      const res = await fetch("/api/storage")
+      const data = await res.json()
+      const locs = (data.locations ?? []) as Array<{ id: string; name: string; parent_id: string | null; location_type: string; unit_subtype: string | null }>
+      const opts = buildLocationOptions(locs)
+      setLocationOptions(opts)
+      const bins = opts.filter((l) => l.subtype === "bin").map((l) => ({ id: l.id, name: l.name, path: l.path }))
+      setImportLocations(bins)
+      return loc.id
+    } catch (err) {
+      console.error("Failed to create bin:", err)
+    }
+  }
+
   const handleSave = async () => {
     setSaving(true)
     const toSave = drafts.filter((d) => d.included)
@@ -1295,6 +1317,7 @@ function ImportContent() {
                         setBulkLocationId(id)
                         setDrafts((prev) => prev.map((d) => ({ ...d, location_id: id })))
                       }}
+                      onCreateBin={handleCreateBin}
                       className="flex-1"
                     />
                   {(() => {
@@ -1469,6 +1492,7 @@ function ImportContent() {
                           locations={locationOptions}
                           value={draft.location_id}
                           onChange={(id) => updateDraft(i, "location_id", id)}
+                          onCreateBin={handleCreateBin}
                           placeholder="Search locations..."
                         />
                       </div>
