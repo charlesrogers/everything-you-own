@@ -14,6 +14,8 @@ export const DEFAULT_TAXONOMY: Record<string, string[]> = {
   "Media & Entertainment": ["Vinyl & Music", "Books", "Games", "Streaming & Subscriptions"],
   "Consumables & Supplies": ["Cleaning Supplies", "Office Supplies", "Tape & Adhesives", "Pet Supplies", "Groceries", "Household Chemicals"],
   "Services & Digital": ["Software", "Subscriptions", "Professional Services", "Insurance", "Memberships", "Domain Names"],
+  "Pet Supplies": ["Dog", "Cat", "Fish & Aquarium", "Bird", "Small Animal", "Pet Food", "Leashes & Collars", "Crates & Carriers"],
+  "Office & Stationery": ["Desk Accessories", "Paper & Notebooks", "Pens & Writing", "Printers & Ink", "Filing & Storage", "Planners & Calendars"],
 }
 
 export const STATUS_OPTIONS: { value: string; label: string }[] = [
