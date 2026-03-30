@@ -255,7 +255,13 @@ function ImportContent() {
 
   const isVendorExcluded = (from: string): boolean => {
     const lower = from.toLowerCase()
-    return [...excludedVendors].some((v) => lower.includes(v))
+    // Strip common suffixes for more flexible matching
+    const normalize = (s: string) => s.replace(/\b(inc\.?|llc\.?|corp\.?|co\.?|ltd\.?)\b/gi, "").trim()
+    const normalizedFrom = normalize(lower)
+    return [...excludedVendors].some((v) => {
+      const normalizedV = normalize(v)
+      return lower.includes(v) || lower.includes(normalizedV) || normalizedFrom.includes(normalizedV)
+    })
   }
 
   // Pipeline batch processing with pages

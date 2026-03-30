@@ -6,7 +6,8 @@ import Link from "next/link"
 import { ChevronRight, Plus, Trash2, Package, Nfc, Trash, Pencil, Check, X, ChevronDown, Copy, ClipboardCheck } from "lucide-react"
 import { SAMLA_BINS } from "@/lib/wms-constants"
 
-const SAMLA_OPTIONS = SAMLA_BINS.map((bin) => ({
+// Fallback only — DB templates are preferred
+const SAMLA_FALLBACK = SAMLA_BINS.map((bin) => ({
   id: bin.id,
   name: `${bin.name} (${bin.volumeGal} gal)`,
   subtitle: `${bin.widthIn}" × ${bin.depthIn}" × ${bin.heightIn}"`,
@@ -68,6 +69,18 @@ export default function LocationDetailPage() {
   const [showBinPicker, setShowBinPicker] = useState(false)
   const [editDepthRow, setEditDepthRow] = useState<"front" | "back" | "full">("front")
   const [parentDepthIn, setParentDepthIn] = useState<number | null>(null)
+
+  // Build bin options from DB templates (with fallback to hardcoded SAMLA)
+  const binOptions = binTemplates.length > 0
+    ? binTemplates.filter((t) => t.category === "bin").map((t) => ({
+        id: t.id,
+        name: t.name + (t.width_in && t.depth_in && t.height_in ? ` (${t.width_in}" × ${t.depth_in}" × ${t.height_in}")` : ""),
+        subtitle: [t.brand, t.width_in && t.depth_in && t.height_in ? `${t.width_in}" × ${t.depth_in}" × ${t.height_in}"` : null].filter(Boolean).join(" — "),
+        widthIn: t.width_in ?? 0,
+        depthIn: t.depth_in ?? 0,
+        heightIn: t.height_in ?? 0,
+      }))
+    : SAMLA_FALLBACK
 
   const loadData = useCallback(async () => {
     if (authLoading) return
@@ -195,7 +208,7 @@ export default function LocationDetailPage() {
   }
 
   const saveDetails = async () => {
-    const bin = editBinTemplate ? SAMLA_OPTIONS.find((b) => b.id === editBinTemplate) : null
+    const bin = editBinTemplate ? binOptions.find((b) => b.id === editBinTemplate) : null
     const existingMeta = (location!.metadata as Record<string, unknown>) ?? {}
     const metadata = location!.unit_subtype === "bin"
       ? { ...existingMeta, depth_row: editDepthRow === "front" ? undefined : editDepthRow }
@@ -272,14 +285,14 @@ export default function LocationDetailPage() {
                     <span className="flex items-center gap-2">
                       <Package className="size-3.5 text-muted-foreground" />
                       {editBinTemplate
-                        ? SAMLA_OPTIONS.find((b) => b.id === editBinTemplate)?.name ?? "Unknown"
+                        ? binOptions.find((b) => b.id === editBinTemplate)?.name ?? "Unknown"
                         : "Custom bin"}
                     </span>
                     <ChevronDown className={`size-3.5 text-muted-foreground transition-transform ${showBinPicker ? "rotate-180" : ""}`} />
                   </button>
                   {showBinPicker && (
                     <div className="mt-1.5 rounded-lg border bg-card shadow-md shadow-black/[0.08] overflow-hidden max-w-xs">
-                      {SAMLA_OPTIONS.map((bin) => (
+                      {binOptions.map((bin) => (
                         <button
                           key={bin.id}
                           onClick={() => {
@@ -322,7 +335,7 @@ export default function LocationDetailPage() {
 
               {/* Depth row — only for bins */}
               {location.unit_subtype === "bin" && (() => {
-                const selBin = editBinTemplate ? SAMLA_BINS.find((b) => b.id === editBinTemplate) : null
+                const selBin = editBinTemplate ? binOptions.find((b) => b.id === editBinTemplate) : null
                 const isFullDepth = selBin && parentDepthIn ? selBin.depthIn >= parentDepthIn * 0.85 : false
                 return (
                   <div>
