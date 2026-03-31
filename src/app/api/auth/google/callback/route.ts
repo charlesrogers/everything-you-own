@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 const GOOGLE_CLIENT_ID = "862570667285-rbabrgvrcau40kemjv0m1s451sfrni1i.apps.googleusercontent.com"
-const PROD_REDIRECT_URI = "https://stuff.imprevista.com/api/auth/google/callback"
+const PROD_REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL || "https://stuff.imprevista.com"}/api/auth/google/callback`
 
 export async function GET(request: NextRequest) {
   // Behind Traefik, request.url shows localhost — use X-Forwarded-Host to get the real origin

@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useState } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -144,6 +145,13 @@ function LoginForm() {
             </button>
           </div>
         </div>
+
+        <p className="text-center text-[13px] text-muted-foreground">
+          Don&apos;t have an account?{' '}
+          <Link href="/signup" className="text-primary hover:underline font-medium">
+            Sign up
+          </Link>
+        </p>
       </div>
     </div>
   )

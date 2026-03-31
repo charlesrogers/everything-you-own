@@ -17,8 +17,19 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Everything You Own",
-  description: "A personal product database for tracking purchases, wishlists, and collections",
+  title: {
+    default: "Everything You Own",
+    template: "%s | Everything You Own",
+  },
+  description: "Know what you own, where it is, and what it's worth. Track purchases, manage storage, and share with your household.",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://stuff.imprevista.com"),
+  openGraph: {
+    title: "Everything You Own",
+    description: "Personal home inventory tracker with Gmail import, NFC storage tracking, and household sharing.",
+    url: "/",
+    siteName: "Everything You Own",
+    type: "website",
+  },
 }
 
 export default function RootLayout({

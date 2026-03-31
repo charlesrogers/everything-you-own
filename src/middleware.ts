@@ -12,6 +12,7 @@ const PROTECTED_ROUTES = [
   '/settings',
   '/import',
   '/migrate',
+  '/storage',
 ]
 
 export async function middleware(request: NextRequest) {

@@ -6,7 +6,7 @@ const IMPORTED_KEY = "eyo_imported_emails"
 // --- OAuth (redirect flow) ---
 
 const GOOGLE_CLIENT_ID = "862570667285-rbabrgvrcau40kemjv0m1s451sfrni1i.apps.googleusercontent.com"
-const PROD_ORIGIN = "https://stuff.imprevista.com"
+const PROD_ORIGIN = process.env.NEXT_PUBLIC_APP_URL || "https://stuff.imprevista.com"
 
 export function getRedirectUri(): string {
   if (typeof window === "undefined") return `${PROD_ORIGIN}/api/auth/google/callback`

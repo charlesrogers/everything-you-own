@@ -27,6 +27,10 @@ export function Nav() {
 
   useEffect(() => setMounted(true), [])
 
+  // Hide nav on public pages
+  const hideNav = ['/', '/login', '/signup'].includes(pathname) || pathname.startsWith('/join/')
+  if (hideNav) return null
+
   return (
     <nav className="sticky top-0 z-50 border-b bg-white/80 dark:bg-neutral-900/80 backdrop-blur-lg">
       <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4 sm:px-6">
