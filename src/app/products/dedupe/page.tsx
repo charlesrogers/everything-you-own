@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
-import { ArrowLeft, GitMerge, Check, Trash2, Plus, MapPin } from "lucide-react"
+import { ArrowLeft, GitMerge, Check, Trash2, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/hooks/use-store"
 import { useAuth } from "@/components/auth-provider"
@@ -14,6 +14,7 @@ interface DupeGroup {
   products: Product[]
   deleteIds: Set<string>
   isFalsePositive: boolean
+  keepQty: number // quantity to set on the kept product
 }
 
 function normalizeForComparison(name: string): string {
@@ -45,7 +46,8 @@ function findDuplicateGroups(
       ? new Set<string>() // don't auto-select any for deletion on false positives
       : new Set(sorted.slice(1).map((p) => p.id))
 
-    groups.push({ reason, products: sorted, deleteIds, isFalsePositive })
+    // Default qty = 1 (user can change it)
+    groups.push({ reason, products: sorted, deleteIds, isFalsePositive, keepQty: 1 })
   }
 
   // Pass 1: Exact name match — but check if different orders (= false positive)
@@ -215,24 +217,27 @@ export default function DedupePage() {
     )
   }
 
-  const mergeGroup = async (groupIdx: number, incrementQty: boolean) => {
+  const updateKeepQty = (groupIdx: number, qty: number) => {
+    setGroups((prev) =>
+      prev.map((g, i) => (i === groupIdx ? { ...g, keepQty: Math.max(1, qty) } : g))
+    )
+  }
+
+  const mergeGroup = async (groupIdx: number) => {
     setMerging(true)
     const group = groups[groupIdx]
     const toDelete = group.products.filter((p) => group.deleteIds.has(p.id))
     const kept = group.products.find((p) => !group.deleteIds.has(p.id))
 
-    if (incrementQty && kept && toDelete.length > 0) {
+    // Set quantity on kept product's location if qty > 1
+    if (kept && group.keepQty > 1) {
       try {
         const locations = await store.getProductLocations(kept.id)
         if (locations.length > 0) {
-          const loc = locations[0]
-          const currentQty = loc.quantity ?? 1
-          await store.updateProductLocation(loc.id, {
-            quantity: currentQty + toDelete.length,
-          })
+          await store.updateProductLocation(locations[0].id, { quantity: group.keepQty })
         }
       } catch (e) {
-        console.error("Failed to increment qty:", e)
+        console.error("Failed to set qty:", e)
       }
     }
 
@@ -242,36 +247,27 @@ export default function DedupePage() {
 
     setGroups((prev) => prev.filter((_, i) => i !== groupIdx))
     setProducts((prev) => prev.filter((p) => !toDelete.some((d) => d.id === p.id)))
-    setSuccessMsg(
-      incrementQty
-        ? `Merged: kept 1 (qty +${toDelete.length}), removed ${toDelete.length}`
-        : `Merged: kept ${group.products.length - toDelete.length}, removed ${toDelete.length}`
-    )
+    setSuccessMsg(`Kept 1 (qty: ${group.keepQty}), removed ${toDelete.length}`)
     setMerging(false)
     setTimeout(() => setSuccessMsg(""), 3000)
   }
 
-  const mergeAll = async (incrementQty: boolean) => {
+  const mergeAll = async () => {
     setMerging(true)
     let totalDeleted = 0
-    // Only merge true duplicates, not false positives
     const toMerge = groups.filter((g) => !g.isFalsePositive && g.deleteIds.size > 0)
     for (const group of toMerge) {
       const toDelete = group.products.filter((p) => group.deleteIds.has(p.id))
       const kept = group.products.find((p) => !group.deleteIds.has(p.id))
 
-      if (incrementQty && kept && toDelete.length > 0) {
+      if (kept && group.keepQty > 1) {
         try {
           const locations = await store.getProductLocations(kept.id)
           if (locations.length > 0) {
-            const loc = locations[0]
-            const currentQty = loc.quantity ?? 1
-            await store.updateProductLocation(loc.id, {
-              quantity: currentQty + toDelete.length,
-            })
+            await store.updateProductLocation(locations[0].id, { quantity: group.keepQty })
           }
         } catch (e) {
-          console.error("Failed to increment qty:", e)
+          console.error("Failed to set qty:", e)
         }
       }
 
@@ -280,7 +276,6 @@ export default function DedupePage() {
         totalDeleted++
       }
     }
-    // Refresh
     const remaining = await store.getProducts()
     setProducts(remaining)
     setGroups(findDuplicateGroups(remaining, placedProductIds))
@@ -312,16 +307,10 @@ export default function DedupePage() {
           </p>
         </div>
         {trueDupes.length > 0 && totalMarkedForDeletion > 0 && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => mergeAll(false)} disabled={merging}>
-              <Trash2 className="size-3.5" />
-              Delete Dupes ({totalMarkedForDeletion})
-            </Button>
-            <Button size="sm" onClick={() => mergeAll(true)} disabled={merging}>
-              <Plus className="size-3.5" />
-              Delete & +Qty
-            </Button>
-          </div>
+          <Button size="sm" onClick={() => mergeAll()} disabled={merging}>
+            <Trash2 className="size-3.5" />
+            {merging ? "Merging..." : `Delete All Dupes (${totalMarkedForDeletion})`}
+          </Button>
         )}
       </div>
 
@@ -354,7 +343,7 @@ export default function DedupePage() {
           </h2>
           {trueDupes.map((group) => {
             const gi = groups.indexOf(group)
-            return <GroupCard key={gi} group={group} gi={gi} placedProductIds={placedProductIds} merging={merging} toggleDelete={toggleDelete} mergeGroup={mergeGroup} />
+            return <GroupCard key={gi} group={group} gi={gi} placedProductIds={placedProductIds} merging={merging} toggleDelete={toggleDelete} mergeGroup={mergeGroup} updateKeepQty={updateKeepQty} />
           })}
         </div>
       )}
@@ -374,7 +363,7 @@ export default function DedupePage() {
             const gi = groups.indexOf(group)
             return (
               <div key={gi}>
-                <GroupCard group={group} gi={gi} placedProductIds={placedProductIds} merging={merging} toggleDelete={toggleDelete} mergeGroup={mergeGroup} />
+                <GroupCard group={group} gi={gi} placedProductIds={placedProductIds} merging={merging} toggleDelete={toggleDelete} mergeGroup={mergeGroup} updateKeepQty={updateKeepQty} />
                 <button
                   onClick={() => dismissFalsePositive(gi)}
                   className="mt-1 text-[11px] text-muted-foreground hover:text-foreground ml-4"
@@ -391,14 +380,15 @@ export default function DedupePage() {
 }
 
 function GroupCard({
-  group, gi, placedProductIds, merging, toggleDelete, mergeGroup,
+  group, gi, placedProductIds, merging, toggleDelete, mergeGroup, updateKeepQty,
 }: {
   group: DupeGroup
   gi: number
   placedProductIds: Set<string>
   merging: boolean
   toggleDelete: (gi: number, id: string) => void
-  mergeGroup: (gi: number, incrementQty: boolean) => void
+  mergeGroup: (gi: number) => void
+  updateKeepQty: (gi: number, qty: number) => void
 }) {
   const keepCount = group.products.length - group.deleteIds.size
   return (
@@ -410,33 +400,26 @@ function GroupCard({
           </span>
           <span className="ml-2 text-[11px] text-muted-foreground">({group.reason})</span>
         </div>
-        <div className="flex gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => mergeGroup(gi, false)}
-            disabled={merging || group.deleteIds.size === 0}
-            className="text-[11px] h-7 px-2"
-          >
-            <Trash2 className="size-3" />
-            Delete
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => mergeGroup(gi, true)}
-            disabled={merging || group.deleteIds.size === 0}
-            className="text-[11px] h-7 px-2"
-          >
-            <Plus className="size-3" />
-            Delete & +Qty
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => mergeGroup(gi)}
+          disabled={merging || group.deleteIds.size === 0}
+          className="text-[11px] h-7 px-2.5"
+        >
+          <Trash2 className="size-3" />
+          Delete Checked ({group.deleteIds.size})
+        </Button>
       </div>
 
       <div className="divide-y">
         {group.products.map((product) => {
           const isMarkedDelete = group.deleteIds.has(product.id)
           const hasLocation = placedProductIds.has(product.id)
+          const isKept = !isMarkedDelete
+          // Show qty input on the first kept product only
+          const keptProducts = group.products.filter((p) => !group.deleteIds.has(p.id))
+          const isFirstKept = isKept && keptProducts[0]?.id === product.id
           return (
             <label
               key={product.id}
@@ -468,6 +451,19 @@ function GroupCard({
                   ) : (
                     <span className="shrink-0 text-[10px] font-medium text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded-4xl">
                       KEEP
+                    </span>
+                  )}
+                  {isFirstKept && group.deleteIds.size > 0 && (
+                    <span className="shrink-0 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                      Qty:
+                      <input
+                        type="number"
+                        min="1"
+                        value={group.keepQty}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => { e.stopPropagation(); updateKeepQty(gi, parseInt(e.target.value) || 1) }}
+                        className="w-12 rounded border bg-background px-1.5 py-0.5 text-[11px] text-center"
+                      />
                     </span>
                   )}
                 </div>
