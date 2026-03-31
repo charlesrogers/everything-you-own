@@ -788,13 +788,30 @@ function ImportContent() {
   }
 
   const handleSave = async () => {
+    if (saving) return // prevent double-click
     setSaving(true)
     const toSave = drafts.filter((d) => d.included)
     const emailIds = new Set<string>()
     let savedCount = 0
+    let skippedDupes = 0
     const errors: string[] = []
 
+    // Fetch existing products ONCE for dedup check
+    const existing = await store.getProducts()
+    const existingKeys = new Set(
+      existing.map((p) => `${p.name.toLowerCase().trim()}|${(p.order_id || "").toLowerCase().trim()}|${(p.retailer || "").toLowerCase().trim()}`)
+    )
+
     for (const draft of toSave) {
+      // Server-side dedup: skip if exact match already exists
+      const draftKey = `${draft.name.toLowerCase().trim()}|${(draft.order_id || "").toLowerCase().trim()}|${(draft.retailer || "").toLowerCase().trim()}`
+      if (existingKeys.has(draftKey)) {
+        console.log(`Skipping duplicate: "${draft.name}" (order: ${draft.order_id}, retailer: ${draft.retailer})`)
+        skippedDupes++
+        emailIds.add(draft.emailId)
+        continue
+      }
+
       try {
         const newProduct = await store.addProduct({
           name: draft.name, brand: draft.brand || undefined,
@@ -806,6 +823,8 @@ function ImportContent() {
           is_consumable: draft.is_consumable || undefined, source_url: draft.source_url || undefined,
           visibility: "shared", status: "purchased", currency: "USD", tags: draft.tags,
         })
+        // Add to existing keys so subsequent drafts in this batch don't duplicate
+        existingKeys.add(draftKey)
         if (draft.location_id) {
           await store.addProductToLocation({ product_id: newProduct.id, location_id: draft.location_id, quantity: draft.quantity || 1 }).catch(() => {})
           localStorage.setItem("eyo_last_bin_id", draft.location_id)
@@ -821,9 +840,11 @@ function ImportContent() {
     // Mark emails as imported (don't let this block)
     await store.markEmailsImported([...emailIds]).catch((e) => console.error("markEmailsImported failed:", e))
 
-    if (errors.length > 0) {
-      console.error(`Failed to save ${errors.length} products:`, errors)
-      alert(`Saved ${savedCount} products. ${errors.length} failed: ${errors.slice(0, 3).join(", ")}${errors.length > 3 ? "..." : ""}`)
+    if (errors.length > 0 || skippedDupes > 0) {
+      const parts: string[] = [`Saved ${savedCount} products.`]
+      if (skippedDupes > 0) parts.push(`${skippedDupes} skipped (already exist).`)
+      if (errors.length > 0) parts.push(`${errors.length} failed: ${errors.slice(0, 3).join(", ")}${errors.length > 3 ? "..." : ""}`)
+      alert(parts.join(" "))
     }
     setSaving(false)
 

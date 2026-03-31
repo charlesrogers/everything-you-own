@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
-import { ArrowLeft, GitMerge, Check, Trash2, Plus } from "lucide-react"
+import { ArrowLeft, GitMerge, Check, Trash2, Plus, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/hooks/use-store"
 import { useAuth } from "@/components/auth-provider"
@@ -12,28 +12,43 @@ import type { Product } from "@/lib/types"
 interface DupeGroup {
   reason: string
   products: Product[]
-  deleteIds: Set<string> // which products to delete (checked = delete)
+  deleteIds: Set<string>
+  isFalsePositive: boolean
 }
 
 function normalizeForComparison(name: string): string {
   return name.toLowerCase().trim().replace(/\s+/g, " ")
 }
 
-function findDuplicateGroups(products: Product[]): DupeGroup[] {
+function findDuplicateGroups(
+  products: Product[],
+  placedProductIds: Set<string>
+): DupeGroup[] {
   const assigned = new Set<string>()
   const groups: DupeGroup[] = []
 
-  function addGroup(reason: string, prods: Product[]) {
+  function addGroup(reason: string, prods: Product[], isFalsePositive: boolean) {
     const ids = prods.map((p) => p.id)
     if (ids.some((id) => assigned.has(id))) return
     ids.forEach((id) => assigned.add(id))
-    // Default: keep oldest, mark rest for deletion
-    const sorted = [...prods].sort((a, b) => a.created_at.localeCompare(b.created_at))
-    const deleteIds = new Set(sorted.slice(1).map((p) => p.id))
-    groups.push({ reason, products: prods, deleteIds })
+
+    // Sort: prefer keeping products with locations, then oldest
+    const sorted = [...prods].sort((a, b) => {
+      const aPlaced = placedProductIds.has(a.id) ? 1 : 0
+      const bPlaced = placedProductIds.has(b.id) ? 1 : 0
+      if (bPlaced !== aPlaced) return bPlaced - aPlaced // placed first
+      return a.created_at.localeCompare(b.created_at) // then oldest
+    })
+
+    // Default: keep first (placed or oldest), mark rest for deletion
+    const deleteIds = isFalsePositive
+      ? new Set<string>() // don't auto-select any for deletion on false positives
+      : new Set(sorted.slice(1).map((p) => p.id))
+
+    groups.push({ reason, products: sorted, deleteIds, isFalsePositive })
   }
 
-  // Pass 1: Exact name match
+  // Pass 1: Exact name match — but check if different orders (= false positive)
   const byNormalizedName = new Map<string, Product[]>()
   for (const p of products) {
     const key = normalizeForComparison(p.name)
@@ -41,10 +56,18 @@ function findDuplicateGroups(products: Product[]): DupeGroup[] {
     byNormalizedName.get(key)!.push(p)
   }
   for (const [, prods] of byNormalizedName) {
-    if (prods.length >= 2) addGroup("Exact name match", prods)
+    if (prods.length < 2) continue
+    // Check if these are from different orders — likely bought the same thing twice
+    const orderIds = new Set(prods.map((p) => (p.order_id || "").toLowerCase().trim()).filter(Boolean))
+    const isFalsePositive = orderIds.size > 1
+    addGroup(
+      isFalsePositive ? "Same name but different orders (likely separate purchases)" : "Exact name match",
+      prods,
+      isFalsePositive
+    )
   }
 
-  // Pass 2: Same order_id + retailer
+  // Pass 2: Same order_id + retailer with similar names
   const byOrder = new Map<string, Product[]>()
   for (const p of products) {
     if (assigned.has(p.id) || !p.order_id || !p.retailer) continue
@@ -68,7 +91,15 @@ function findDuplicateGroups(products: Product[]): DupeGroup[] {
       if (!found) nameGroups.set(norm, [p])
     }
     for (const [, nameGroup] of nameGroups) {
-      if (nameGroup.length >= 2) addGroup("Same order + similar name", nameGroup)
+      if (nameGroup.length < 2) continue
+      // Same order + similar name BUT different prices = probably different variants, not dupes
+      const prices = new Set(nameGroup.map((p) => p.price).filter((p) => p != null))
+      const isFalsePositive = prices.size > 1
+      addGroup(
+        isFalsePositive ? "Same order, similar name, different prices (variants?)" : "Same order + similar name",
+        nameGroup,
+        isFalsePositive
+      )
     }
   }
 
@@ -81,10 +112,11 @@ function findDuplicateGroups(products: Product[]): DupeGroup[] {
     byNamePriceRetailer.get(key)!.push(p)
   }
   for (const [, prods] of byNamePriceRetailer) {
-    if (prods.length >= 2) addGroup("Same name + price + retailer", prods)
+    if (prods.length < 2) continue
+    addGroup("Same name + price + retailer", prods, false)
   }
 
-  // Pass 4: Fuzzy substring match (shorter is >60% of longer)
+  // Pass 4: Fuzzy substring match
   const remaining = products.filter((p) => !assigned.has(p.id))
   for (let i = 0; i < remaining.length; i++) {
     if (assigned.has(remaining[i].id)) continue
@@ -99,24 +131,24 @@ function findDuplicateGroups(products: Product[]): DupeGroup[] {
         fuzzyGroup.push(remaining[j])
       }
     }
-    if (fuzzyGroup.length >= 2) addGroup("Similar name (fuzzy)", fuzzyGroup)
+    if (fuzzyGroup.length >= 2) {
+      // Fuzzy matches with different orders or different prices are likely false positives
+      const orderIds = new Set(fuzzyGroup.map((p) => (p.order_id || "").toLowerCase().trim()).filter(Boolean))
+      const prices = new Set(fuzzyGroup.map((p) => p.price).filter((p) => p != null))
+      const isFalsePositive = orderIds.size > 1 || prices.size > 1
+      addGroup(
+        isFalsePositive ? "Similar name but different orders/prices" : "Similar name (fuzzy)",
+        fuzzyGroup,
+        isFalsePositive
+      )
+    }
   }
 
-  return groups
-}
-
-function formatDate(dateStr?: string): string {
-  if (!dateStr) return "-"
-  try {
-    return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-  } catch {
-    return dateStr
-  }
-}
-
-function formatPrice(price?: number, currency?: string): string {
-  if (price == null) return "-"
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(price)
+  // Sort: true duplicates first, false positives at bottom
+  return groups.sort((a, b) => {
+    if (a.isFalsePositive !== b.isFalsePositive) return a.isFalsePositive ? 1 : -1
+    return b.products.length - a.products.length // larger groups first
+  })
 }
 
 export default function DedupePage() {
@@ -124,29 +156,47 @@ export default function DedupePage() {
   useAuth()
 
   const [products, setProducts] = useState<Product[]>([])
+  const [placedProductIds, setPlacedProductIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [groups, setGroups] = useState<DupeGroup[]>([])
   const [merging, setMerging] = useState(false)
   const [successMsg, setSuccessMsg] = useState("")
+  const [showFalsePositives, setShowFalsePositives] = useState(false)
 
   useEffect(() => {
     async function load() {
-      const all = await store.getProducts()
+      const [all, storageData] = await Promise.all([
+        store.getProducts(),
+        fetch("/api/storage").then((r) => r.json()).catch(() => ({ locations: [], itemCounts: {} })),
+      ])
+
+      // Get product IDs that have storage locations
+      const placed = new Set<string>()
+      try {
+        // Fetch product_locations to build the set of placed product IDs
+        const unsorted = await store.getUnsortedProducts()
+        const unsortedIds = new Set(unsorted.map((u: { id: string }) => u.id))
+        for (const p of all) {
+          if (!unsortedIds.has(p.id)) placed.add(p.id)
+        }
+      } catch {
+        // If unsorted endpoint fails, just continue without placement info
+      }
+
       setProducts(all)
-      setGroups(findDuplicateGroups(all))
+      setPlacedProductIds(placed)
+      setGroups(findDuplicateGroups(all, placed))
       setLoading(false)
     }
     load()
   }, [store])
 
-  const totalDupeProducts = useMemo(
-    () => groups.reduce((sum, g) => sum + g.products.length, 0),
-    [groups]
-  )
+  const trueDupes = useMemo(() => groups.filter((g) => !g.isFalsePositive), [groups])
+  const falsePositives = useMemo(() => groups.filter((g) => g.isFalsePositive), [groups])
 
   const totalMarkedForDeletion = useMemo(
-    () => groups.reduce((sum, g) => sum + g.deleteIds.size, 0),
-    [groups]
+    () => trueDupes.reduce((sum, g) => sum + g.deleteIds.size, 0),
+    [trueDupes]
   )
 
   const toggleDelete = (groupIdx: number, productId: string) => {
@@ -157,8 +207,7 @@ export default function DedupePage() {
         if (next.has(productId)) {
           next.delete(productId)
         } else {
-          // Don't allow deleting ALL — must keep at least one
-          if (next.size >= g.products.length - 1) return g
+          if (next.size >= g.products.length - 1) return g // keep at least one
           next.add(productId)
         }
         return { ...g, deleteIds: next }
@@ -173,7 +222,6 @@ export default function DedupePage() {
     const kept = group.products.find((p) => !group.deleteIds.has(p.id))
 
     if (incrementQty && kept && toDelete.length > 0) {
-      // Find if kept product has a location, increment its quantity there
       try {
         const locations = await store.getProductLocations(kept.id)
         if (locations.length > 0) {
@@ -206,7 +254,9 @@ export default function DedupePage() {
   const mergeAll = async (incrementQty: boolean) => {
     setMerging(true)
     let totalDeleted = 0
-    for (const group of groups) {
+    // Only merge true duplicates, not false positives
+    const toMerge = groups.filter((g) => !g.isFalsePositive && g.deleteIds.size > 0)
+    for (const group of toMerge) {
       const toDelete = group.products.filter((p) => group.deleteIds.has(p.id))
       const kept = group.products.find((p) => !group.deleteIds.has(p.id))
 
@@ -230,12 +280,17 @@ export default function DedupePage() {
         totalDeleted++
       }
     }
-    setGroups([])
+    // Refresh
     const remaining = await store.getProducts()
     setProducts(remaining)
-    setSuccessMsg(`Merged all: removed ${totalDeleted} duplicate${totalDeleted !== 1 ? "s" : ""}`)
+    setGroups(findDuplicateGroups(remaining, placedProductIds))
+    setSuccessMsg(`Merged ${toMerge.length} groups: removed ${totalDeleted} duplicate${totalDeleted !== 1 ? "s" : ""}`)
     setMerging(false)
     setTimeout(() => setSuccessMsg(""), 5000)
+  }
+
+  const dismissFalsePositive = (groupIdx: number) => {
+    setGroups((prev) => prev.filter((_, i) => i !== groupIdx))
   }
 
   if (loading) return <LoadingSkeleton />
@@ -252,18 +307,19 @@ export default function DedupePage() {
         <div className="flex-1">
           <h1 className="text-[20px] font-bold">Find Duplicates</h1>
           <p className="text-[12px] text-muted-foreground">
-            Found {groups.length} group{groups.length !== 1 ? "s" : ""} · {totalMarkedForDeletion} marked for deletion
+            {trueDupes.length} duplicate group{trueDupes.length !== 1 ? "s" : ""} · {totalMarkedForDeletion} marked for deletion
+            {falsePositives.length > 0 && ` · ${falsePositives.length} possible false positive${falsePositives.length !== 1 ? "s" : ""}`}
           </p>
         </div>
-        {groups.length > 0 && (
+        {trueDupes.length > 0 && totalMarkedForDeletion > 0 && (
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => mergeAll(false)} disabled={merging}>
               <Trash2 className="size-3.5" />
-              Delete Dupes
+              Delete Dupes ({totalMarkedForDeletion})
             </Button>
             <Button size="sm" onClick={() => mergeAll(true)} disabled={merging}>
               <Plus className="size-3.5" />
-              Delete & Add Qty
+              Delete & +Qty
             </Button>
           </div>
         )}
@@ -278,7 +334,7 @@ export default function DedupePage() {
       )}
 
       {/* Empty state */}
-      {groups.length === 0 && !successMsg && (
+      {trueDupes.length === 0 && falsePositives.length === 0 && !successMsg && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
             <Check className="size-8 text-emerald-500" />
@@ -290,99 +346,164 @@ export default function DedupePage() {
         </div>
       )}
 
-      {/* Duplicate groups */}
-      <div className="space-y-4">
-        {groups.map((group, gi) => {
-          const keepCount = group.products.length - group.deleteIds.size
-          return (
-            <div
-              key={gi}
-              className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden"
-            >
-              <div className="flex items-center justify-between border-b px-4 py-2.5">
-                <div>
-                  <span className="text-[13px] font-medium">
-                    {group.products.length} products · keep {keepCount}, delete {group.deleteIds.size}
-                  </span>
-                  <span className="ml-2 text-[11px] text-muted-foreground">({group.reason})</span>
-                </div>
-                <div className="flex gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => mergeGroup(gi, false)}
-                    disabled={merging || group.deleteIds.size === 0}
-                    className="text-[11px] h-7 px-2"
-                  >
-                    <Trash2 className="size-3" />
-                    Delete
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => mergeGroup(gi, true)}
-                    disabled={merging || group.deleteIds.size === 0}
-                    className="text-[11px] h-7 px-2"
-                  >
-                    <Plus className="size-3" />
-                    Delete & +Qty
-                  </Button>
-                </div>
-              </div>
+      {/* True duplicate groups */}
+      {trueDupes.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-[14px] font-semibold text-destructive">
+            True Duplicates ({trueDupes.length} groups)
+          </h2>
+          {trueDupes.map((group) => {
+            const gi = groups.indexOf(group)
+            return <GroupCard key={gi} group={group} gi={gi} placedProductIds={placedProductIds} merging={merging} toggleDelete={toggleDelete} mergeGroup={mergeGroup} />
+          })}
+        </div>
+      )}
 
-              <div className="divide-y">
-                {group.products.map((product) => {
-                  const isMarkedDelete = group.deleteIds.has(product.id)
-                  return (
-                    <label
-                      key={product.id}
-                      className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors ${
-                        isMarkedDelete ? "bg-red-500/5" : "bg-emerald-500/5 hover:bg-emerald-500/8"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isMarkedDelete}
-                        onChange={() => toggleDelete(gi, product.id)}
-                        className="mt-1 rounded accent-red-600"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[13px] font-medium truncate ${isMarkedDelete ? "line-through text-muted-foreground" : ""}`}>
-                            {product.name}
-                          </span>
-                          {isMarkedDelete ? (
-                            <span className="shrink-0 text-[10px] font-medium text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-4xl">
-                              DELETE
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-[10px] font-medium text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded-4xl">
-                              KEEP
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-[11px] text-muted-foreground">
-                          {product.brand && (
-                            <span><span className="text-muted-foreground/50">Brand:</span> {product.brand}</span>
-                          )}
-                          <span><span className="text-muted-foreground/50">Price:</span> {formatPrice(product.price, product.currency)}</span>
-                          {product.retailer && (
-                            <span><span className="text-muted-foreground/50">Retailer:</span> {product.retailer}</span>
-                          )}
-                          <span><span className="text-muted-foreground/50">Purchased:</span> {formatDate(product.purchase_date)}</span>
-                          {product.order_id && (
-                            <span><span className="text-muted-foreground/50">Order:</span> {product.order_id}</span>
-                          )}
-                          <span><span className="text-muted-foreground/50">Added:</span> {formatDate(product.date_added)}</span>
-                        </div>
-                      </div>
-                    </label>
-                  )
-                })}
+      {/* False positives */}
+      {falsePositives.length > 0 && (
+        <div className="space-y-4">
+          <button
+            onClick={() => setShowFalsePositives(!showFalsePositives)}
+            className="flex items-center gap-2 text-[14px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span>{showFalsePositives ? "▼" : "▶"}</span>
+            Possible False Positives ({falsePositives.length} groups)
+            <span className="text-[11px] font-normal">— similar names but likely separate purchases</span>
+          </button>
+          {showFalsePositives && falsePositives.map((group) => {
+            const gi = groups.indexOf(group)
+            return (
+              <div key={gi}>
+                <GroupCard group={group} gi={gi} placedProductIds={placedProductIds} merging={merging} toggleDelete={toggleDelete} mergeGroup={mergeGroup} />
+                <button
+                  onClick={() => dismissFalsePositive(gi)}
+                  className="mt-1 text-[11px] text-muted-foreground hover:text-foreground ml-4"
+                >
+                  Not a duplicate — dismiss
+                </button>
               </div>
-            </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GroupCard({
+  group, gi, placedProductIds, merging, toggleDelete, mergeGroup,
+}: {
+  group: DupeGroup
+  gi: number
+  placedProductIds: Set<string>
+  merging: boolean
+  toggleDelete: (gi: number, id: string) => void
+  mergeGroup: (gi: number, incrementQty: boolean) => void
+}) {
+  const keepCount = group.products.length - group.deleteIds.size
+  return (
+    <div className="rounded-xl border bg-card shadow-sm shadow-black/[0.04] overflow-hidden">
+      <div className="flex items-center justify-between border-b px-4 py-2.5">
+        <div>
+          <span className="text-[13px] font-medium">
+            {group.products.length} products · keep {keepCount}, delete {group.deleteIds.size}
+          </span>
+          <span className="ml-2 text-[11px] text-muted-foreground">({group.reason})</span>
+        </div>
+        <div className="flex gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => mergeGroup(gi, false)}
+            disabled={merging || group.deleteIds.size === 0}
+            className="text-[11px] h-7 px-2"
+          >
+            <Trash2 className="size-3" />
+            Delete
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => mergeGroup(gi, true)}
+            disabled={merging || group.deleteIds.size === 0}
+            className="text-[11px] h-7 px-2"
+          >
+            <Plus className="size-3" />
+            Delete & +Qty
+          </Button>
+        </div>
+      </div>
+
+      <div className="divide-y">
+        {group.products.map((product) => {
+          const isMarkedDelete = group.deleteIds.has(product.id)
+          const hasLocation = placedProductIds.has(product.id)
+          return (
+            <label
+              key={product.id}
+              className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors ${
+                isMarkedDelete ? "bg-red-500/5" : "bg-emerald-500/5 hover:bg-emerald-500/8"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={isMarkedDelete}
+                onChange={() => toggleDelete(gi, product.id)}
+                className="mt-1 rounded accent-red-600"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-[13px] font-medium truncate ${isMarkedDelete ? "line-through text-muted-foreground" : ""}`}>
+                    {product.name}
+                  </span>
+                  {hasLocation && (
+                    <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium text-blue-600 bg-blue-500/10 px-1.5 py-0.5 rounded-4xl">
+                      <MapPin className="size-2.5" />
+                      Placed
+                    </span>
+                  )}
+                  {isMarkedDelete ? (
+                    <span className="shrink-0 text-[10px] font-medium text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-4xl">
+                      DELETE
+                    </span>
+                  ) : (
+                    <span className="shrink-0 text-[10px] font-medium text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded-4xl">
+                      KEEP
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-[11px] text-muted-foreground">
+                  {product.brand && (
+                    <span><span className="text-muted-foreground/50">Brand:</span> {product.brand}</span>
+                  )}
+                  <span><span className="text-muted-foreground/50">Price:</span> {formatPrice(product.price, product.currency)}</span>
+                  {product.retailer && (
+                    <span><span className="text-muted-foreground/50">Retailer:</span> {product.retailer}</span>
+                  )}
+                  <span><span className="text-muted-foreground/50">Purchased:</span> {formatDate(product.purchase_date)}</span>
+                  {product.order_id && (
+                    <span><span className="text-muted-foreground/50">Order:</span> {product.order_id}</span>
+                  )}
+                  <span><span className="text-muted-foreground/50">Added:</span> {formatDate(product.date_added)}</span>
+                </div>
+              </div>
+            </label>
           )
         })}
       </div>
     </div>
   )
+}
+
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return "-"
+  try {
+    return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  } catch {
+    return dateStr
+  }
+}
+
+function formatPrice(price?: number, currency?: string): string {
+  if (price == null) return "-"
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(price)
 }
