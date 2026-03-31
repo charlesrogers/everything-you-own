@@ -30,6 +30,7 @@ jobs:
             NEXT_PUBLIC_SUPABASE_URL=https://db.imprevista.com
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
             NEXT_PUBLIC_USE_SUPABASE=true
+            NEXT_PUBLIC_APP_URL=https://stuff.imprevista.com
             SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
